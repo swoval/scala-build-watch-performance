@@ -1,14 +1,13 @@
 package build.performance;
 
 import com.swoval.files.FileTreeViews.Observer;
+import com.swoval.files.PathWatcher;
+import com.swoval.files.PathWatchers;
 import com.swoval.files.PathWatchers.Event;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import com.swoval.files.PathWatcher;
-import com.swoval.files.PathWatchers;
 import java.nio.file.Paths;
-import java.nio.file.attribute.FileTime;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -16,15 +15,21 @@ public class Main {
   private static final Path defaultTouchFile =
       Paths.get("shared", "AkkaMain.scala").toAbsolutePath();
   private static final Path defaultWatchFile = Paths.get("target", "watch.out").toAbsolutePath();
+  private static final int defaultIterations = 1;
 
   public static void main(final String[] args) {
     Path touchFile = defaultTouchFile;
     Path watchFile = defaultWatchFile;
     char prev = '\0';
+    int iterations = defaultIterations;
     for (final String arg : args) {
       switch (prev) {
         case 't':
           touchFile = Paths.get(arg);
+          prev = '\0';
+          break;
+        case 'i':
+          iterations = Integer.valueOf(arg);
           prev = '\0';
           break;
         case 'w':
@@ -34,8 +39,10 @@ public class Main {
         default:
           if (arg.equals("-t") || arg.equals("--touch")) {
             prev = 't';
-          } else if (arg.equals("-watch") || arg.equals("--watch")) {
+          } else if (arg.equals("-w") || arg.equals("--watch")) {
             prev = 'w';
+          } else if (arg.equals("-i") || arg.equals("--iterations")) {
+            prev = 'i';
           } else {
             final String[] parts = arg.split("=");
             if (parts.length == 2) {
@@ -64,14 +71,24 @@ public class Main {
               queue.offer(1);
             }
           });
+      long totalElapsed = 0;
       final byte[] touchContents = Files.readAllBytes(touchFile);
-      Files.write(touchFile, touchContents);
-      System.out.println("Wrote to " + touchFile);
-      queue.poll(5, TimeUnit.SECONDS);
-      long watchFileLastModified = Files.getLastModifiedTime(watchFile).toMillis();
-      long touchLastModified = Files.getLastModifiedTime(touchFile).toMillis();
-      long elapsed = watchFileLastModified - touchLastModified;
-      System.out.println("Took " + elapsed + " ms to run task");
+      final StringBuilder commentLines = new StringBuilder();
+      commentLines.append(new String(touchContents));
+      for (int i = 0; i < iterations; ++i) {
+        commentLines.append("//\n");
+        Files.write(touchFile, commentLines.toString().getBytes());
+        System.out.println("Wrote to " + touchFile);
+        queue.clear();
+        queue.poll(2, TimeUnit.SECONDS);
+        long watchFileLastModified = Files.getLastModifiedTime(watchFile).toMillis();
+        long touchLastModified = Files.getLastModifiedTime(touchFile).toMillis();
+        long elapsed = watchFileLastModified - touchLastModified;
+        totalElapsed += elapsed;
+        System.out.println("Took " + elapsed + " ms to run task");
+      }
+      long average = totalElapsed / iterations;
+      System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
     } catch (final IOException | InterruptedException e) {
     }
   }
