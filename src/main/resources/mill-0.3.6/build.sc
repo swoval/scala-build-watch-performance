@@ -1,7 +1,7 @@
 import mill._
 import mill.scalalib._
 
-object AkkaTest extends SbtModule {
+object perf extends SbtModule {
   def scalaVersion = "2.12.8"
   def ivyDeps = Agg(ivy"com.typesafe.akka::akka-actor:2.5.16")
 

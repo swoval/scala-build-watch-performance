@@ -51,23 +51,27 @@ public class Main {
     var warmupIterations = 3;
     var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
+    var extraSources = 5000;
 
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
     try (final var tempDir = new TempDirectory()) {
       for (final String arg : args) {
-
         switch (prev) {
           case 'b':
             baseDirectory = Optional.of(Paths.get(arg));
             prev = '\0';
             break;
-          case 's':
-            sourceDirectory = Optional.of(Paths.get(arg));
+          case 'e':
+            extraSources = Integer.valueOf(arg);
             prev = '\0';
             break;
           case 'i':
             iterations = Integer.valueOf(arg);
+            prev = '\0';
+            break;
+          case 's':
+            sourceDirectory = Optional.of(Paths.get(arg));
             prev = '\0';
             break;
           case 'w':
@@ -77,6 +81,8 @@ public class Main {
           default:
             if (arg.equals("-b") || arg.equals("--base-directory")) {
               prev = 'b';
+            } else if (arg.equals("-e") || arg.equals("--extra-sources")) {
+              prev = 'e';
             } else if (arg.equals("-s") || arg.equals("--source-directory")) {
               prev = 's';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
@@ -100,21 +106,51 @@ public class Main {
         }
       }
       for (final var projectName : projects) {
+        final var base = tempDir.get();
+        final var projectBase = base.resolve(projectName);
+        setupProject(projectName, base);
         final Project project;
         if (projectName.startsWith("sbt")) {
-          project = sbtProject(tempDir.get(), projectName);
+          var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
+          project = new Project(projectBase, projectBase, "java", "-jar", binary, "~test");
         } else if (projectName.startsWith("mill")) {
-          project = millProject(tempDir.get(), projectName);
+          final var binary = projectBase.resolve("bin").resolve("mill").toString();
+          project =
+              new Project(
+                  projectBase,
+                  projectBase.resolve("perf"),
+                  "java",
+                  "-DMILL_CLASSPATH=" + binary,
+                  "-DMILL_VERSION=0.3.6",
+                  "-Djna.nosys=true",
+                  "-cp",
+                  binary,
+                  "mill.main.client.MillClientMain",
+                  "-w",
+                  "perf.test");
         } else if (projectName.startsWith("gradle")) {
-          project = gradleProject(tempDir.get(), projectName);
+          var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
+          final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
+          project =
+              new Project(
+                  projectBase,
+                  projectBase,
+                  "java",
+                  "-Xmx64m",
+                  "-Xms64m",
+                  "-Dorg.gradle.appname=gradle",
+                  "-classpath",
+                  binary,
+                  "org.gradle.launcher.GradleMain",
+                  "-t",
+                  "spec");
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
         try {
           run(project, iterations, warmupIterations);
-          int count = 5000;
-          project.genSources(count);
-          System.out.println("generated " + count + " sources");
+          project.genSources(extraSources);
+          System.out.println("generated " + extraSources + " sources");
           run(project, iterations, warmupIterations);
         } finally {
           project.close();
@@ -123,30 +159,6 @@ public class Main {
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
     }
-  }
-
-  private static Project sbtProject(final Path base, final String name)
-      throws IOException, URISyntaxException {
-    final Path sbtBase = base.resolve(name);
-    setupProject(name, base);
-    final var process = runTool(sbtBase, "sbt", "~test");
-    return new Project(sbtBase, sbtBase, process);
-  }
-
-  private static Project gradleProject(final Path base, final String name)
-      throws IOException, URISyntaxException {
-    final Path gradleBase = base.resolve(name);
-    setupProject(name, base);
-    final var process = runTool(gradleBase, "gradle", "-t", "spec");
-    return new Project(gradleBase, gradleBase, process);
-  }
-
-  private static Project millProject(final Path base, final String projectName)
-      throws IOException, URISyntaxException {
-    final Path millBase = base.resolve(projectName);
-    setupProject(projectName, base);
-    final var process = runTool(millBase, "mill", "-w", "AkkaTest.test");
-    return new Project(millBase, millBase.resolve("AkkaTest"), process);
   }
 
   private static void run(final Project project, final int iterations, final int warmupIterations)
@@ -167,8 +179,10 @@ public class Main {
           });
       long totalElapsed = 0;
       queue.clear();
+      System.out.println("Waiting for startup");
       if (queue.poll(4, TimeUnit.MINUTES) == null)
         throw new TimeoutException("Failed to touch expected file");
+      System.out.println("start up completed");
       for (int i = -warmupIterations; i < iterations; ++i) {
         queue.clear();
         long touchLastModified = project.updateAkkaMain();
@@ -199,6 +213,7 @@ public class Main {
     final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     ForkProcess(final Process process) {
+      System.out.println("Managing process with pid " + process.pid());
       this.process = process;
       thread =
           new Thread("process-io-thread") {
@@ -228,9 +243,10 @@ public class Main {
                       System.err.print(builder.toString());
                     }
                   }
+                  Thread.sleep(2);
                 }
-              } catch (final IOException e) {
-                // ignore
+              } catch (final IOException | InterruptedException e) {
+                isShutdown.set(true);
               }
             }
           };
@@ -241,11 +257,13 @@ public class Main {
     @Override
     public void close() {
       if (isShutdown.compareAndSet(false, true)) {
-        process.destroyForcibly();
+        var newProcess = process.destroyForcibly();
         thread.interrupt();
         try {
+          newProcess.waitFor(10, TimeUnit.SECONDS);
           thread.join();
         } catch (final InterruptedException e) {
+          e.printStackTrace();
           // something weird happened
         }
       }
@@ -269,8 +287,7 @@ public class Main {
       return getModifiedTimeOrZero(akkaMainPath);
     }
 
-    Project(
-        final Path baseDirectory, final Path projectBaseDirectory, final ForkProcess forkProcess)
+    Project(final Path baseDirectory, final Path projectBaseDirectory, final String... commands)
         throws IOException, URISyntaxException {
       this.baseDirectory = baseDirectory;
 
@@ -285,7 +302,8 @@ public class Main {
       Files.write(
           testSrcDirectory.resolve("AkkaPerfTest.scala"),
           loadSourceFile("AkkaPerfTest.scala").getBytes());
-      this.forkProcess = forkProcess;
+      this.forkProcess =
+          new ForkProcess(new ProcessBuilder(commands).directory(baseDirectory.toFile()).start());
     }
 
     void genSources(int count) throws IOException {
@@ -298,13 +316,11 @@ public class Main {
 
     @Override
     public void close() {
-      if (forkProcess != null) forkProcess.close();
+      if (forkProcess != null) {
+        System.out.println("should kill " + forkProcess);
+        forkProcess.close();
+      }
     }
-  }
-
-  private static ForkProcess runTool(final Path tempDir, final String... commands)
-      throws IOException {
-    return new ForkProcess(new ProcessBuilder(commands).directory(tempDir.toFile()).start());
   }
 
   private static String generatedSource(final int counter) {
