@@ -9,7 +9,7 @@ javacOptions ++= Seq("-source", "11", "-target", "11")
 val genBinary = taskKey[Path]("generate an executable binary")
 genBinary := {
   val dir = target.value.toPath
-  val classPath = (fullClasspath in Runtime).value.map(_.data).mkString(File.pathSeparator)
+  val classPath = (fullClasspathAsJars in Runtime).value.map(_.data).mkString(File.pathSeparator)
   val content =
     s"""
        |#!/bin/bash
