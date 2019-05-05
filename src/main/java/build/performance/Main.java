@@ -158,7 +158,6 @@ public class Main {
 
             @Override
             public void onNext(final Event event) {
-              System.out.println("Received event " + event);
               queue.offer(1);
             }
           });
