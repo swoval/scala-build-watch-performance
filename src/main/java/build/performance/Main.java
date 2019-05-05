@@ -51,6 +51,7 @@ public class Main {
     var warmupIterations = 3;
     var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
+
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
     try (final var tempDir = new TempDirectory()) {
@@ -103,7 +104,7 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           project = sbtProject(tempDir.get(), projectName);
         } else if (projectName.startsWith("mill")) {
-          project = millProject(tempDir.get());
+          project = millProject(tempDir.get(), projectName);
         } else if (projectName.startsWith("gradle")) {
           project = gradleProject(tempDir.get(), projectName);
         } else {
@@ -140,9 +141,10 @@ public class Main {
     return new Project(gradleBase, gradleBase, process);
   }
 
-  private static Project millProject(final Path base) throws IOException, URISyntaxException {
-    final Path millBase = base.resolve("mill");
-    setupProject("mill", base);
+  private static Project millProject(final Path base, final String projectName)
+      throws IOException, URISyntaxException {
+    final Path millBase = base.resolve(projectName);
+    setupProject(projectName, base);
     final var process = runTool(millBase, "mill", "-w", "AkkaTest.test");
     return new Project(millBase, millBase.resolve("AkkaTest"), process);
   }
