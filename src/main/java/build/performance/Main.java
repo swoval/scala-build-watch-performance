@@ -261,7 +261,6 @@ public class Main {
     long updateAkkaMain() throws IOException {
       final String append = "\n//" + UUID.randomUUID().toString();
       Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
-      System.out.println("Writing " + append + " to " + akkaMainPath);
       return getModifiedTimeOrZero(akkaMainPath);
     }
 
