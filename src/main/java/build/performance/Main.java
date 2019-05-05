@@ -169,8 +169,7 @@ public class Main {
         queue.clear();
         long touchLastModified = project.updateAkkaMain();
         queue.poll(30, TimeUnit.SECONDS);
-        System.out.println(watchFile);
-        long watchFileLastModified = Files.getLastModifiedTime(watchFile).toMillis();
+        long watchFileLastModified = getModifiedTimeOrZero(watchFile);
         long elapsed = watchFileLastModified - touchLastModified;
         if (elapsed > 0) {
           // Discard the first run that includes build tool startup
@@ -260,7 +259,7 @@ public class Main {
       final String append = "\n//" + UUID.randomUUID().toString();
       Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
       System.out.println("Writing " + append + " to " + akkaMainPath);
-      return Files.getLastModifiedTime(akkaMainPath).toMillis();
+      return getModifiedTimeOrZero(akkaMainPath);
     }
 
     Project(
@@ -435,4 +434,13 @@ public class Main {
 
     public TempDirectory() throws IOException {}
   }
+
+  private static long getModifiedTimeOrZero(final Path path) {
+    try {
+      return Files.getLastModifiedTime(path).toMillis();
+    } catch (final IOException e) {
+      return 0;
+    }
+  }
+
 }
