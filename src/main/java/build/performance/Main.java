@@ -307,8 +307,9 @@ public class Main {
 
   private static String generatedSource(final int counter) {
     final int lines = 75;
-    return "package sbt.benchmark.blah\n\nclass Blah" + counter +
-        "// ******************************************************************\n".repeat(lines);
+    return "package sbt.benchmark.blah\n\nclass Blah"
+        + counter
+        + "\n// ******************************************************************".repeat(lines);
   }
 
   private static String loadSourceFile(final String name) throws IOException, URISyntaxException {
