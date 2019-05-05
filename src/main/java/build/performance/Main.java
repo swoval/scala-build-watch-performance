@@ -7,6 +7,7 @@ import com.swoval.files.PathWatchers.Event;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileSystem;
@@ -24,6 +25,7 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,32 +33,29 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class Main {
   private static final int defaultIterations = 1;
   private static final Set<String> allProjects;
-  private static final Path defaultRelativeSourceDirectory =
-      Paths.get("src").resolve("main").resolve("scala").resolve("sbt").resolve("benchmark");
+
+  private static final Path srcDirectory(final String config) {
+    return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
+  }
 
   static {
     allProjects = new HashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
-    allProjects.add("mill");
+    allProjects.add("mill-0.3.6");
+    allProjects.add("gradle-5.4.1");
   }
 
-  //  private static Process startProject(final String project) {
-  //    switch (project) {
-  //      case "sbt-0":
-  //      case "sbt-1":
-  //      case "mill":
-  //    }
-  //  }
-
-  public static void main(final String[] args) throws IOException {
+  public static void main(final String[] args) throws IOException, URISyntaxException {
     var prev = '\0';
+    var warmupIterations = 3;
     var iterations = defaultIterations;
     var baseDirectory = Optional.<Path>empty();
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
     try (final var tempDir = new TempDirectory()) {
       for (final String arg : args) {
+
         switch (prev) {
           case 'b':
             baseDirectory = Optional.of(Paths.get(arg));
@@ -70,6 +69,10 @@ public class Main {
             iterations = Integer.valueOf(arg);
             prev = '\0';
             break;
+          case 'w':
+            warmupIterations = Integer.valueOf(arg);
+            prev = '\0';
+            break;
           default:
             if (arg.equals("-b") || arg.equals("--base-directory")) {
               prev = 'b';
@@ -77,6 +80,8 @@ public class Main {
               prev = 's';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
               prev = 'i';
+            } else if (arg.equals("-w") || arg.equals("--warmup-iterations")) {
+              prev = 'w';
             } else if (allProjects.contains(arg)) {
               projects.add(arg);
             } else {
@@ -94,26 +99,54 @@ public class Main {
         }
       }
       for (final var projectName : projects) {
-        final Path base = tempDir.get().resolve(projectName);
-        System.out.println(base);
-        setupProject(projectName, tempDir.get());
-        final var process = runSbt(tempDir.get().resolve("sbt-1.3.0"), "~test");
-        final var project =
-            new Project(base, base.resolve(defaultRelativeSourceDirectory), process);
+        final Project project;
+        if (projectName.startsWith("sbt")) {
+          project = sbtProject(tempDir.get(), projectName);
+        } else if (projectName.startsWith("mill")) {
+          project = millProject(tempDir.get());
+        } else if (projectName.startsWith("gradle")) {
+          project = gradleProject(tempDir.get(), projectName);
+        } else {
+          throw new IllegalArgumentException("Cannot create a project from name " + projectName);
+        }
         try {
-          run(project, iterations);
+          run(project, iterations, warmupIterations);
           int count = 5000;
-          genSources(project, count);
+          project.genSources(count);
           System.out.println("generated " + count + " sources");
-          run(project, iterations);
+          run(project, iterations, warmupIterations);
         } finally {
           project.close();
         }
       }
+      baseDirectory.ifPresent(dir -> {});
     }
   }
 
-  private static void run(final Project project, final int iterations) {
+  private static final Project sbtProject(final Path base, final String name)
+      throws IOException, URISyntaxException {
+    final Path sbtBase = base.resolve(name);
+    setupProject(name, base);
+    final var process = runTool(sbtBase, "sbt", "~test");
+    return new Project(sbtBase, sbtBase, process);
+  }
+
+  private static final Project gradleProject(final Path base, final String name)
+      throws IOException, URISyntaxException {
+    final Path gradleBase = base.resolve(name);
+    setupProject(name, base);
+    final var process = runTool(gradleBase, "gradle", "-t", "spec");
+    return new Project(gradleBase, gradleBase, process);
+  }
+
+  private static final Project millProject(final Path base) throws IOException, URISyntaxException {
+    final Path millBase = base.resolve("mill");
+    setupProject("mill", base);
+    final var process = runTool(millBase, "mill", "-w", "AkkaTest.test");
+    return new Project(millBase, millBase.resolve("AkkaTest"), process);
+  }
+
+  private static void run(final Project project, final int iterations, final int warmupIterations) {
     try (final PathWatcher<PathWatchers.Event> watcher = PathWatchers.get(true)) {
       final var watchFile = project.getBaseDirectory().resolve("watch.out");
       watcher.register(watchFile, -1);
@@ -130,23 +163,21 @@ public class Main {
             }
           });
       long totalElapsed = 0;
-      final Path sourceFile = project.getSourceDirectory().resolve("AkkaMain.scala");
-      final byte[] touchContents = Files.readAllBytes(sourceFile);
-      final StringBuilder commentLines = new StringBuilder();
-      commentLines.append(new String(touchContents));
       queue.clear();
       queue.poll(2, TimeUnit.MINUTES);
-      for (int i = -5; i < iterations; ++i) {
-        commentLines.append("//\n");
+      for (int i = -warmupIterations; i < iterations; ++i) {
         queue.clear();
-        Files.write(sourceFile, commentLines.toString().getBytes());
-        queue.poll(10, TimeUnit.SECONDS);
+        long touchLastModified = project.updateAkkaMain();
+        queue.poll(30, TimeUnit.SECONDS);
         System.out.println(watchFile);
         long watchFileLastModified = Files.getLastModifiedTime(watchFile).toMillis();
-        long touchLastModified = Files.getLastModifiedTime(sourceFile).toMillis();
         long elapsed = watchFileLastModified - touchLastModified;
-        // Discard the first run that includes build tool startup
-        if (i >= 0) totalElapsed += elapsed;
+        if (elapsed > 0) {
+          // Discard the first run that includes build tool startup
+          if (i >= 0) totalElapsed += elapsed;
+        } else {
+          i -= 1;
+        }
         System.out.println("Took " + elapsed + " ms to run task");
       }
       long average = totalElapsed / iterations;
@@ -167,6 +198,8 @@ public class Main {
           new Thread("process-io-thread") {
             @Override
             public void run() {
+              // Reads the input and error streams of a process and dumps them to
+              // the main process output streams
               final InputStream is = process.getInputStream();
               final InputStream es = process.getErrorStream();
               try {
@@ -186,7 +219,7 @@ public class Main {
                       builder.append((char) es.read());
                     }
                     if (builder.length() > 0) {
-                      System.out.print(builder.toString());
+                      System.err.print(builder.toString());
                     }
                   }
                 }
@@ -214,21 +247,51 @@ public class Main {
 
   private static class Project implements AutoCloseable {
     private final Path baseDirectory;
-    private final Path sourceDirectory;
+    private final Path projectBaseDirectory;
+    private final String akkaMainContent;
+    private final Path akkaMainPath;
     private final Optional<ForkProcess> forkProcess;
 
     public Path getBaseDirectory() {
       return baseDirectory;
     }
 
-    public Path getSourceDirectory() {
-      return sourceDirectory;
+    public long updateAkkaMain() throws IOException {
+      final String append = "\n//" + UUID.randomUUID().toString();
+      Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
+      System.out.println("Writing " + append + " to " + akkaMainPath);
+      return Files.getLastModifiedTime(akkaMainPath).toMillis();
     }
 
-    Project(final Path baseDirectory, final Path sourceDirectory, final ForkProcess forkProcess) {
+    Project(
+        final Path baseDirectory, final Path projectBaseDirectory, final ForkProcess forkProcess)
+        throws IOException, URISyntaxException {
       this.baseDirectory = baseDirectory;
-      this.sourceDirectory = sourceDirectory;
+
+      final Path mainSrcDirectory = projectBaseDirectory.resolve(srcDirectory("main"));
+      Files.createDirectories(mainSrcDirectory);
+      akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
+      akkaMainContent = loadSourceFile("AkkaMain.scala");
+      this.projectBaseDirectory = projectBaseDirectory;
+      Files.write(akkaMainPath, akkaMainContent.getBytes());
+      try {
+        Thread.sleep(100);
+      } catch (final InterruptedException e) {
+      }
+      final Path testSrcDirectory = projectBaseDirectory.resolve(srcDirectory("test"));
+      Files.createDirectories(testSrcDirectory);
+      Files.write(
+          testSrcDirectory.resolve("AkkaPerfTest.scala"),
+          loadSourceFile("AkkaPerfTest.scala").getBytes());
       this.forkProcess = Optional.of(forkProcess);
+    }
+
+    public void genSources(int count) throws IOException {
+      final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
+      Files.createDirectories(src);
+      for (int i = 1; i <= count; ++i) {
+        Files.write(src.resolve("Blah" + i + ".scala"), generatedSource(i).getBytes());
+      }
     }
 
     @Override
@@ -237,21 +300,9 @@ public class Main {
     }
   }
 
-  private static ForkProcess runSbt(final Path tempDir, final String... commands)
+  private static ForkProcess runTool(final Path tempDir, final String... commands)
       throws IOException {
-    final var allCommands = new String[commands.length + 1];
-    allCommands[0] = "sbt";
-    for (int i = 0; i < commands.length; ++i) allCommands[i + 1] = commands[i];
-    return new ForkProcess(new ProcessBuilder(allCommands).directory(tempDir.toFile()).start());
-  }
-
-  private static void genSources(final Project project, int count) throws IOException {
-    final Path src = project.getSourceDirectory();
-    final Path blah = src.resolve("blah");
-    Files.createDirectories(blah);
-    for (int i = 1; i <= count; ++i) {
-      Files.write(blah.resolve("Blah" + i + ".scala"), generatedSource(i).getBytes());
-    }
+    return new ForkProcess(new ProcessBuilder(commands).directory(tempDir.toFile()).start());
   }
 
   private static String generatedSource(final int counter) {
@@ -265,6 +316,12 @@ public class Main {
       result.append("// ******************************************************************");
     }
     return result.toString();
+  }
+
+  private static String loadSourceFile(final String name) throws IOException, URISyntaxException {
+    final ClassLoader loader = Main.class.getClassLoader();
+    final URI uri = loader.getResource("shared/" + name).toURI();
+    return new String(Files.readAllBytes(Paths.get(uri)));
   }
 
   private static Path setupProject(final String project, final Path tempDir) throws IOException {
@@ -346,7 +403,7 @@ public class Main {
               public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
                   throws IOException {
                 if (file != directory) {
-                  if (attrs.isDirectory() && file != directory) {
+                  if (attrs.isDirectory()) {
                     closeImpl(file);
                   }
                   Files.deleteIfExists(file);

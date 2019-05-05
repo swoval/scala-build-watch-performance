@@ -1,0 +1,19 @@
+plugins {
+    id 'scala'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.scala-lang:scala-library:2.12.8'
+    compile 'com.typesafe.akka:akka-actor_2.12:2.5.16'
+    testCompile 'org.scalatest:scalatest_2.12:3.0.5'
+}
+
+task spec(dependsOn: ['testClasses'], type: JavaExec) {
+  main = 'org.scalatest.tools.Runner'
+  args = ['-R', 'build/classes/scala/test', '-o']
+  classpath = sourceSets.test.runtimeClasspath
+}
