@@ -4,8 +4,7 @@ import java.nio.file.{Files, Path}
 
 libraryDependencies += "com.swoval" % "file-tree-views" % "2.1.0"
 
-javacOptions ++= Seq("-source", "8", "-target", "8") ++
-  Option(System.getProperty("bootstrap.classpath")).toSeq.flatMap(c => Seq("-bootclasspath", c))
+javacOptions ++= Seq("-source", "11", "-target", "11")
 
 val genBinary = taskKey[Path]("generate an executable binary")
 genBinary := {
