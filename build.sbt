@@ -24,3 +24,5 @@ genBinary := {
   Files.setPosixFilePermissions(binary, permissions)
   binary
 }
+
+autoScalaLibrary := false

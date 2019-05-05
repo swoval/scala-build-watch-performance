@@ -27,13 +27,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
-  private static final int defaultIterations = 1;
-  private static final Set<String> allProjects;
+  private static Set<String> allProjects;
 
-  private static final Path srcDirectory(final String config) {
+  private static Path srcDirectory(final String config) {
     return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
   }
 
@@ -45,10 +45,11 @@ public class Main {
     allProjects.add("gradle-5.4.1");
   }
 
-  public static void main(final String[] args) throws IOException, URISyntaxException {
+  public static void main(final String[] args)
+      throws IOException, URISyntaxException, TimeoutException {
     var prev = '\0';
     var warmupIterations = 3;
-    var iterations = defaultIterations;
+    var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
@@ -86,7 +87,7 @@ public class Main {
             } else {
               final String[] parts = arg.split("=");
               if (parts.length == 2) {
-                if (parts[0].equals("-s") || parts[0].equals("--base-directory")) {
+                if (parts[0].equals("-s") || parts[0].equals("--source-directory")) {
                   sourceDirectory = Optional.of(Paths.get(parts[1]));
                 } else if (parts[0].equals("-b") || parts[0].equals("--base-directory")) {
                   baseDirectory = Optional.of(Paths.get(parts[1]));
@@ -118,11 +119,12 @@ public class Main {
           project.close();
         }
       }
-      baseDirectory.ifPresent(dir -> {});
+      final Path src = sourceDirectory.orElse(null);
+      baseDirectory.ifPresent(dir -> System.out.println(src));
     }
   }
 
-  private static final Project sbtProject(final Path base, final String name)
+  private static Project sbtProject(final Path base, final String name)
       throws IOException, URISyntaxException {
     final Path sbtBase = base.resolve(name);
     setupProject(name, base);
@@ -130,7 +132,7 @@ public class Main {
     return new Project(sbtBase, sbtBase, process);
   }
 
-  private static final Project gradleProject(final Path base, final String name)
+  private static Project gradleProject(final Path base, final String name)
       throws IOException, URISyntaxException {
     final Path gradleBase = base.resolve(name);
     setupProject(name, base);
@@ -138,14 +140,15 @@ public class Main {
     return new Project(gradleBase, gradleBase, process);
   }
 
-  private static final Project millProject(final Path base) throws IOException, URISyntaxException {
+  private static Project millProject(final Path base) throws IOException, URISyntaxException {
     final Path millBase = base.resolve("mill");
     setupProject("mill", base);
     final var process = runTool(millBase, "mill", "-w", "AkkaTest.test");
     return new Project(millBase, millBase.resolve("AkkaTest"), process);
   }
 
-  private static void run(final Project project, final int iterations, final int warmupIterations) {
+  private static void run(final Project project, final int iterations, final int warmupIterations)
+      throws TimeoutException {
     try (final PathWatcher<PathWatchers.Event> watcher = PathWatchers.get(true)) {
       final var watchFile = project.getBaseDirectory().resolve("watch.out");
       watcher.register(watchFile, -1);
@@ -162,7 +165,8 @@ public class Main {
           });
       long totalElapsed = 0;
       queue.clear();
-      queue.poll(2, TimeUnit.MINUTES);
+      if (queue.poll(4, TimeUnit.MINUTES) == null)
+        throw new TimeoutException("Failed to touch expected file");
       for (int i = -warmupIterations; i < iterations; ++i) {
         queue.clear();
         long touchLastModified = project.updateAkkaMain();
@@ -237,6 +241,7 @@ public class Main {
         try {
           thread.join();
         } catch (final InterruptedException e) {
+          // something weird happened
         }
       }
     }
@@ -247,13 +252,13 @@ public class Main {
     private final Path projectBaseDirectory;
     private final String akkaMainContent;
     private final Path akkaMainPath;
-    private final Optional<ForkProcess> forkProcess;
+    private final ForkProcess forkProcess;
 
-    public Path getBaseDirectory() {
+    Path getBaseDirectory() {
       return baseDirectory;
     }
 
-    public long updateAkkaMain() throws IOException {
+    long updateAkkaMain() throws IOException {
       final String append = "\n//" + UUID.randomUUID().toString();
       Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
       System.out.println("Writing " + append + " to " + akkaMainPath);
@@ -271,19 +276,15 @@ public class Main {
       akkaMainContent = loadSourceFile("AkkaMain.scala");
       this.projectBaseDirectory = projectBaseDirectory;
       Files.write(akkaMainPath, akkaMainContent.getBytes());
-      try {
-        Thread.sleep(100);
-      } catch (final InterruptedException e) {
-      }
       final Path testSrcDirectory = projectBaseDirectory.resolve(srcDirectory("test"));
       Files.createDirectories(testSrcDirectory);
       Files.write(
           testSrcDirectory.resolve("AkkaPerfTest.scala"),
           loadSourceFile("AkkaPerfTest.scala").getBytes());
-      this.forkProcess = Optional.of(forkProcess);
+      this.forkProcess = forkProcess;
     }
 
-    public void genSources(int count) throws IOException {
+    void genSources(int count) throws IOException {
       final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
       Files.createDirectories(src);
       for (int i = 1; i <= count; ++i) {
@@ -293,7 +294,7 @@ public class Main {
 
     @Override
     public void close() {
-      forkProcess.ifPresent(ForkProcess::close);
+      if (forkProcess != null) forkProcess.close();
     }
   }
 
@@ -303,27 +304,23 @@ public class Main {
   }
 
   private static String generatedSource(final int counter) {
-    final var result = new StringBuilder();
-    result.append("package sbt.benchmark.blah");
-    result.append('\n');
-    result.append('\n');
-    result.append("class Blah" + counter);
     final int lines = 75;
-    for (int i = 0; i < lines; ++i) {
-      result.append("// ******************************************************************");
-    }
-    return result.toString();
+    return "package sbt.benchmark.blah\n\nclass Blah" + counter +
+        "// ******************************************************************\n".repeat(lines);
   }
 
   private static String loadSourceFile(final String name) throws IOException, URISyntaxException {
     final ClassLoader loader = Main.class.getClassLoader();
-    final URI uri = loader.getResource("shared/" + name).toURI();
+    final URL url = loader.getResource("shared/" + name);
+    if (url == null) throw new NullPointerException();
+    final URI uri = url.toURI();
     return new String(Files.readAllBytes(Paths.get(uri)));
   }
 
-  private static Path setupProject(final String project, final Path tempDir) throws IOException {
-    final URL url = Main.class.getClassLoader().getResource(project);
+  private static void setupProject(final String project, final Path tempDir) {
     try {
+      final URL url = Main.class.getClassLoader().getResource(project);
+      if (url == null) throw new NullPointerException();
       final URI uri = url.toURI();
       Path path;
       if (uri.getScheme().equals("jar")) {
@@ -365,16 +362,15 @@ public class Main {
               return FileVisitResult.CONTINUE;
             }
           });
-    } catch (final Exception e) {
+    } catch (final NullPointerException | IOException | URISyntaxException e) {
       e.printStackTrace();
     }
-    return tempDir.resolve(project);
   }
 
   private static class TempDirectory implements AutoCloseable {
     private final Path tempDir = Files.createTempDirectory("build-perf").toRealPath();
 
-    public Path get() {
+    Path get() {
       return tempDir;
     }
 
@@ -426,7 +422,7 @@ public class Main {
       closeImpl(tempDir);
     }
 
-    public TempDirectory() throws IOException {}
+    TempDirectory() throws IOException {}
   }
 
   private static long getModifiedTimeOrZero(final Path path) {
