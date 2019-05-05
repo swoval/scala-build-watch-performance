@@ -170,16 +170,19 @@ public class Main {
       for (int i = -warmupIterations; i < iterations; ++i) {
         queue.clear();
         long touchLastModified = project.updateAkkaMain();
-        queue.poll(30, TimeUnit.SECONDS);
-        long watchFileLastModified = getModifiedTimeOrZero(watchFile);
-        long elapsed = watchFileLastModified - touchLastModified;
-        if (elapsed > 0) {
-          // Discard the first run that includes build tool startup
-          if (i >= 0) totalElapsed += elapsed;
+        if (queue.poll(30, TimeUnit.SECONDS) != null) {
+          long watchFileLastModified = getModifiedTimeOrZero(watchFile);
+          long elapsed = watchFileLastModified - touchLastModified;
+          if (elapsed > 0) {
+            // Discard the first run that includes build tool startup
+            if (i >= 0) totalElapsed += elapsed;
+          } else {
+            i -= 1;
+          }
+          System.out.println("Took " + elapsed + " ms to run task");
         } else {
           i -= 1;
         }
-        System.out.println("Took " + elapsed + " ms to run task");
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
