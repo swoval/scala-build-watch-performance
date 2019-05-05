@@ -21,7 +21,6 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -323,55 +322,51 @@ public class Main {
   }
 
   private static Path setupProject(final String project, final Path tempDir) throws IOException {
-    final ClassLoader loader = Main.class.getClassLoader();
-    final Enumeration<URL> urls = loader.getResources(project);
-    while (urls.hasMoreElements()) {
-      final URL url = urls.nextElement();
-      try {
-        final URI uri = url.toURI();
-        Path path;
-        if (uri.getScheme().equals("jar")) {
-          FileSystem fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
-          path = fileSystem.getPath("/" + project);
-        } else {
-          path = Paths.get(uri);
-        }
-        final var base = path.getParent();
-        final var temp = tempDir.resolve(path.getFileName().toString());
-        Files.createDirectories(temp);
-        Files.walkFileTree(
-            path,
-            new FileVisitor<>() {
-              @Override
-              public FileVisitResult preVisitDirectory(
-                  final Path dir, final BasicFileAttributes attrs) throws IOException {
-                Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
-                return FileVisitResult.CONTINUE;
-              }
-
-              @Override
-              public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
-                  throws IOException {
-                if (attrs.isRegularFile()) {
-                  var content = Files.readAllBytes(file);
-                  Files.write(tempDir.resolve(base.relativize(file).toString()), content);
-                }
-                return FileVisitResult.CONTINUE;
-              }
-
-              @Override
-              public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                return FileVisitResult.CONTINUE;
-              }
-
-              @Override
-              public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
-                return FileVisitResult.CONTINUE;
-              }
-            });
-      } catch (final Exception e) {
-        e.printStackTrace();
+    final URL url = Main.class.getClassLoader().getResource(project);
+    try {
+      final URI uri = url.toURI();
+      Path path;
+      if (uri.getScheme().equals("jar")) {
+        FileSystem fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
+        path = fileSystem.getPath("/" + project);
+      } else {
+        path = Paths.get(uri);
       }
+      final var base = path.getParent();
+      final var temp = tempDir.resolve(path.getFileName().toString());
+      Files.createDirectories(temp);
+      Files.walkFileTree(
+          path,
+          new FileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(
+                final Path dir, final BasicFileAttributes attrs) throws IOException {
+              Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
+              return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                throws IOException {
+              if (attrs.isRegularFile()) {
+                var content = Files.readAllBytes(file);
+                Files.write(tempDir.resolve(base.relativize(file).toString()), content);
+              }
+              return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+              return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+              return FileVisitResult.CONTINUE;
+            }
+          });
+    } catch (final Exception e) {
+      e.printStackTrace();
     }
     return tempDir.resolve(project);
   }
@@ -441,5 +436,4 @@ public class Main {
       return 0;
     }
   }
-
 }
