@@ -46,11 +46,11 @@ public class Main {
   }
 
   static {
-    allProjects = new HashSet<>();
+    allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
-    if (!isWin) allProjects.add("mill-0.3.6");
+    allProjects.add("mill-0.3.6");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -165,7 +165,8 @@ public class Main {
                   "-Djna.nosys=true",
                   "-cp",
                   binary,
-                  "mill.main.client.MillClientMain",
+                  "mill.MillMain",
+                  "-i",
                   "-w",
                   "perf.test");
         } else if (projectName.startsWith("gradle")) {
