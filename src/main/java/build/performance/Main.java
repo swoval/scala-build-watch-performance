@@ -67,6 +67,7 @@ public class Main {
     var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
     var extraSources = 5000;
+    var timeout = 10;
     String javaHome = "";
 
     var sourceDirectory = Optional.<Path>empty();
@@ -94,6 +95,10 @@ public class Main {
             sourceDirectory = Optional.of(Paths.get(arg));
             prev = '\0';
             break;
+          case 't':
+            timeout = Integer.valueOf(arg);
+            prev = '\0';
+            break;
           case 'w':
             warmupIterations = Integer.valueOf(arg);
             prev = '\0';
@@ -107,6 +112,8 @@ public class Main {
               prev = 's';
             } else if (arg.equals("-j") || arg.equals("--java-home")) {
               prev = 'j';
+            } else if (arg.equals("-t") || arg.equals("--timeout-minutes")) {
+              prev = 't';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
               prev = 'i';
             } else if (arg.equals("all")) {
@@ -176,10 +183,10 @@ public class Main {
         }
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(project.baseDirectory, 0);
-          run(project, 0, iterations, warmupIterations, watcher);
+          run(project, 0, timeout, iterations, warmupIterations, watcher);
           project.genSources(extraSources);
           System.out.println("generated " + extraSources + " sources");
-          run(project, extraSources, iterations, warmupIterations, watcher);
+          run(project, extraSources, timeout, iterations, warmupIterations, watcher);
         } finally {
           project.close();
         }
@@ -192,6 +199,7 @@ public class Main {
   private static void run(
       final Project project,
       final int count,
+      final int timeoutMinutes,
       final int iterations,
       final int warmupIterations,
       final PathWatcher<PathWatchers.Event> watcher)
@@ -201,7 +209,7 @@ public class Main {
       {
         System.out.println("Waiting for startup");
         final var updateResult = project.updateAkkaMain(watcher, count);
-        if (!updateResult.latch.await(4, TimeUnit.MINUTES))
+        if (!updateResult.latch.await(timeoutMinutes, TimeUnit.MINUTES))
           throw new TimeoutException("Failed to touch expected file");
         System.out.println("Waited for startup");
       }
