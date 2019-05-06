@@ -209,7 +209,6 @@ public class Main {
       System.out.println("Waiting for startup");
       if (queue.poll(4, TimeUnit.MINUTES) == null)
         throw new TimeoutException("Failed to touch expected file");
-      System.out.println("start up completed");
       for (int i = -warmupIterations; i < iterations; ++i) {
         queue.clear();
         long touchLastModified = project.updateAkkaMain();
@@ -289,7 +288,6 @@ public class Main {
           process.destroy();
           process.waitFor(10, TimeUnit.SECONDS);
           isShutdown.set(true);
-          System.out.println("Waited for process");
           thread.interrupt();
           thread.join();
         } catch (final InterruptedException e) {
@@ -357,7 +355,6 @@ public class Main {
     @Override
     public void close() {
       if (forkProcess != null) {
-        System.out.println("should kill " + forkProcess);
         forkProcess.close();
       }
     }
