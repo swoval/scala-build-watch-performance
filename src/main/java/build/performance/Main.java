@@ -208,6 +208,7 @@ public class Main {
       final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
     try {
+      project.start();
       long totalElapsed = 0;
       {
         System.out.println("Waiting for startup");
@@ -233,6 +234,7 @@ public class Main {
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
+      project.close();
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
     }
@@ -324,7 +326,8 @@ public class Main {
     private final Path projectBaseDirectory;
     private final Path watchPath;
     private final Path mainSrcDirectory;
-    private final ForkProcess forkProcess;
+    private final ProcessBuilder builder;
+    private ForkProcess forkProcess;
 
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
         throws IOException {
@@ -389,9 +392,8 @@ public class Main {
             Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
       }
       System.out.println("Running " + commands[0] + " in " + baseDirectory);
-      final var builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
+      builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
       if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
-      this.forkProcess = new ForkProcess(builder.start());
     }
 
     void genSources(int count) throws IOException {
@@ -402,10 +404,15 @@ public class Main {
       }
     }
 
+    void start() throws IOException {
+      if (forkProcess == null) forkProcess = new ForkProcess(builder.start());
+    }
+
     @Override
     public void close() {
       if (forkProcess != null) {
         forkProcess.close();
+        forkProcess = null;
       }
     }
   }
