@@ -185,9 +185,6 @@ public class Main {
       }
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
-    } finally {
-      System.out.println("close file system");
-      jarFileSystem.close();
     }
   }
 
