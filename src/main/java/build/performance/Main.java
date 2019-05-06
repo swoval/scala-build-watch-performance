@@ -139,6 +139,7 @@ public class Main {
             break;
         }
       }
+      final var results = new ArrayList<RunResult>();
       for (final var projectName : projects) {
         final var base = tempDir.get();
         final var projectBase = base.resolve(projectName);
@@ -147,11 +148,13 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           project =
-              new Project(projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
+              new Project(
+                  projectName, projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           project =
               new Project(
+                  projectName,
                   projectBase,
                   projectBase.resolve("perf"),
                   javaHome,
@@ -169,6 +172,7 @@ public class Main {
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
           project =
               new Project(
+                  projectName,
                   projectBase,
                   projectBase,
                   javaHome,
@@ -186,20 +190,60 @@ public class Main {
         }
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(project.baseDirectory, 0);
-          run(project, 0, timeout, iterations, warmupIterations, watcher);
+          results.add(run(project, 0, timeout, iterations, warmupIterations, watcher));
           project.genSources(extraSources);
           System.out.println("generated " + extraSources + " sources");
-          run(project, extraSources, timeout, iterations, warmupIterations, watcher);
+          results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
         } finally {
           project.close();
         }
+      }
+      Collections.sort(
+          results,
+          (left, right) ->
+              left.count == right.count
+                  ? left.name.compareTo(right.name)
+                  : left.count - right.count);
+      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
+      System.out.println(":-------: | :------: | :------: | :------: | :------: ");
+      for (final var result : results) {
+        System.out.println(result.markdownRow());
       }
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
     }
   }
 
-  private static void run(
+  private static final class RunResult {
+    private final long[] results;
+    private final int count;
+    private final String name;
+    private final long totalMs;
+
+    RunResult(final String name, final int count, final long[] results, final long totalMs) {
+      this.count = count;
+      this.name = name;
+      this.results = results;
+      this.totalMs = totalMs;
+    }
+
+    String markdownRow() {
+      var min = Long.MAX_VALUE;
+      var max = Long.MIN_VALUE;
+      var avg = 0;
+      for (var elapsed : results) {
+        min = Math.min(min, elapsed);
+        max = Math.max(max, elapsed);
+        avg += elapsed;
+      }
+      avg /= results.length;
+      return this.name
+          + (" (" + (count + 3) + " source files) | ")
+          + (min + " | " + max + " | " + avg + " | " + totalMs);
+    }
+  }
+
+  private static RunResult run(
       final Project project,
       final int count,
       final int timeoutMinutes,
@@ -207,6 +251,8 @@ public class Main {
       final int warmupIterations,
       final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
+    final var result = new long[iterations];
+    final var start = System.nanoTime();
     try {
       project.start();
       long totalElapsed = 0;
@@ -223,7 +269,10 @@ public class Main {
           long elapsed = updateResult.elapsed();
           if (elapsed > 0) {
             // Discard the first run that includes build tool startup
-            if (i >= 0) totalElapsed += elapsed;
+            if (i >= 0) {
+              totalElapsed += elapsed;
+              result[i] = elapsed;
+            }
           } else {
             i -= 1;
           }
@@ -238,6 +287,8 @@ public class Main {
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
     }
+    final var end = System.nanoTime();
+    return new RunResult(project.name, count, result, (end - start) / 1000000);
   }
 
   private static class ForkProcess implements AutoCloseable {
@@ -327,6 +378,7 @@ public class Main {
     private final Path watchPath;
     private final Path mainSrcDirectory;
     private final ProcessBuilder builder;
+    private final String name;
     private ForkProcess forkProcess;
 
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
@@ -369,11 +421,13 @@ public class Main {
     }
 
     Project(
+        final String name,
         final Path baseDirectory,
         final Path projectBaseDirectory,
         final String javaHome,
         final String... commands)
         throws IOException, URISyntaxException {
+      this.name = name;
       this.baseDirectory = baseDirectory;
       this.mainSrcDirectory =
           Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
