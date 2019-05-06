@@ -4,6 +4,7 @@ import com.swoval.files.FileTreeViews.Observer;
 import com.swoval.files.PathWatcher;
 import com.swoval.files.PathWatchers;
 import com.swoval.files.PathWatchers.Event;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -20,6 +21,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -34,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
+  private static boolean isWin = System.getProperty("os.name", "").toLowerCase().startsWith("win");
 
   private static Path srcDirectory(final String config) {
     return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
@@ -43,10 +49,12 @@ public class Main {
     allProjects = new HashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
-    allProjects.add("mill-0.3.6");
     allProjects.add("gradle-5.4.1");
+    if (!isWin) allProjects.add("mill-0.3.6");
     try {
-      final var uri = Main.class.getClassLoader().getResource("sbt-1.3.0").toURI();
+      final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
+      if (url == null) throw new NullPointerException();
+      final var uri = url.toURI();
       jarFileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
     } catch (final Exception e) {
       throw new ExceptionInInitializerError(e);
@@ -60,7 +68,7 @@ public class Main {
     var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
     var extraSources = 5000;
-    var javaHome = Optional.<String>empty();
+    String javaHome = "";
 
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
@@ -72,7 +80,7 @@ public class Main {
             prev = '\0';
             break;
           case 'j':
-            javaHome = Optional.of(arg);
+            javaHome = arg;
             prev = '\0';
             break;
           case 'e':
@@ -178,6 +186,9 @@ public class Main {
       }
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
+    } finally {
+      System.out.println("close file system");
+      jarFileSystem.close();
     }
   }
 
@@ -303,47 +314,35 @@ public class Main {
 
     long updateAkkaMain() throws IOException {
       final String append = "\n//" + UUID.randomUUID().toString();
-      setPermissions(Files.write(akkaMainPath, (akkaMainContent + append).getBytes()));
+      Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
       return getModifiedTimeOrZero(akkaMainPath);
-    }
-
-    private static void setDirPermissions(final Path base, final Path relative) throws IOException {
-      final var it = relative.iterator();
-      var path = base;
-      while (it.hasNext()) {
-        path = path.resolve(it.next());
-        setPermissions(path);
-      }
     }
 
     Project(
         final Path baseDirectory,
         final Path projectBaseDirectory,
-        final Optional<String> javaHome,
+        final String javaHome,
         final String... commands)
         throws IOException, URISyntaxException {
       this.baseDirectory = baseDirectory;
-      setPermissions(baseDirectory);
-      if (!baseDirectory.equals(projectBaseDirectory)) setPermissions(projectBaseDirectory);
-      final var relativeMainSourceDirectory = srcDirectory("main");
-      final var mainSrcDirectory = projectBaseDirectory.resolve(relativeMainSourceDirectory);
-      setPermissions(Files.createDirectories(mainSrcDirectory));
-      setDirPermissions(projectBaseDirectory, relativeMainSourceDirectory);
+      final var mainSrcDirectory =
+          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
       akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
       akkaMainContent = loadSourceFile("AkkaMain.scala");
       this.projectBaseDirectory = projectBaseDirectory;
-      setPermissions(Files.write(akkaMainPath, akkaMainContent.getBytes()));
-      final var relativeTestSrcDirectory = srcDirectory("test");
-      final var testSrcDirectory = projectBaseDirectory.resolve(relativeTestSrcDirectory);
-      setPermissions(Files.createDirectories(testSrcDirectory));
-      setDirPermissions(projectBaseDirectory, relativeTestSrcDirectory);
-      setPermissions(
-          Files.write(
-              testSrcDirectory.resolve("AkkaPerfTest.scala"),
-              loadSourceFile("AkkaPerfTest.scala").getBytes()));
+      Files.writeString(akkaMainPath, akkaMainContent);
+      final var testSrcDirectory =
+          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("test")));
+      Files.writeString(
+          testSrcDirectory.resolve("AkkaPerfTest.scala"), loadSourceFile("AkkaPerfTest.scala"));
+      if (!javaHome.isEmpty()) {
+        final var commandName =
+            System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
+        commands[0] = javaHome + File.separator + "bin" + File.separator + commandName;
+      }
       System.out.println("Running " + commands[0] + " in " + baseDirectory);
       final var builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
-      javaHome.ifPresent(h -> builder.environment().put("JAVA_HOME", h));
+      if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
       this.forkProcess = new ForkProcess(builder.start());
     }
 
@@ -351,8 +350,7 @@ public class Main {
       final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
       Files.createDirectories(src);
       for (int i = 1; i <= count; ++i) {
-        setPermissions(
-            Files.write(src.resolve("Blah" + i + ".scala"), generatedSource(i).getBytes()));
+        Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
       }
     }
 
@@ -380,12 +378,6 @@ public class Main {
     return new String(Files.readAllBytes(Paths.get(uri)));
   }
 
-  private static Path setPermissions(final Path path) throws IOException {
-    path.toFile().setReadable(true);
-    path.toFile().setWritable(true);
-    return path;
-  }
-
   private static void setupProject(final String project, final Path tempDir) {
     try {
       final URL url = Main.class.getClassLoader().getResource(project);
@@ -398,16 +390,13 @@ public class Main {
         path = Paths.get(uri);
       }
       final var base = path.getParent();
-      final var temp = tempDir.resolve(path.getFileName().toString());
-      setPermissions(Files.createDirectories(temp));
       Files.walkFileTree(
           path,
           new FileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(
                 final Path dir, final BasicFileAttributes attrs) throws IOException {
-              setPermissions(
-                  Files.createDirectories(tempDir.resolve(base.relativize(dir).toString())));
+              Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
               return FileVisitResult.CONTINUE;
             }
 
@@ -415,9 +404,8 @@ public class Main {
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
                 throws IOException {
               if (attrs.isRegularFile()) {
-                var content = Files.readAllBytes(file);
-                setPermissions(
-                    Files.write(tempDir.resolve(base.relativize(file).toString()), content));
+                Files.write(
+                    tempDir.resolve(base.relativize(file).toString()), Files.readAllBytes(file));
               }
               return FileVisitResult.CONTINUE;
             }
@@ -438,8 +426,7 @@ public class Main {
   }
 
   private static class TempDirectory implements AutoCloseable {
-    private final Path tempDir =
-        setPermissions(Files.createTempDirectory("build-perf").toRealPath());
+    private final Path tempDir;
 
     Path get() {
       return tempDir;
@@ -506,7 +493,25 @@ public class Main {
       closeImpl(tempDir);
     }
 
-    TempDirectory() throws IOException {}
+    TempDirectory() throws IOException {
+      final var base =
+          Paths.get(System.getProperty("java.io.tmpdir", ""))
+              .toRealPath()
+              .resolve("build-tool-perf");
+      Files.createDirectories(base);
+      final var file = base.toFile();
+      if (!Files.isWritable(base) && !file.setWritable(true))
+        throw new IOException("Couldn't set " + base + " writable.");
+      if (!Files.isReadable(base) && !file.setReadable(true))
+        throw new IOException("Couldn't set " + base + " readable.");
+      final var formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd+HH-mm-ss");
+      final var zdt =
+          ZonedDateTime.ofInstant(
+              Instant.ofEpochMilli(System.currentTimeMillis()),
+              Clock.systemDefaultZone().getZone());
+      final var text = formatter.format(zdt);
+      tempDir = Files.createDirectories(base.resolve(text));
+    }
   }
 
   private static long getModifiedTimeOrZero(final Path path) {
