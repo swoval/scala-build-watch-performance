@@ -341,7 +341,8 @@ public class Main {
             public void onNext(final Event event) {
               if (event.getTypedPath().getPath().equals(newPath)) {
                 try {
-                  if (Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
+                  if (event.getTypedPath().isFile()
+                      && Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
                 } catch (final NumberFormatException e) {
                   // ignore this, it means the file doesn't exist
                 } catch (final Exception e) {
