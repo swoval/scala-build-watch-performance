@@ -205,7 +205,7 @@ public class Main {
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
       System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
-      System.out.println(":-------: | :------: | :------: | :------: | :------: ");
+      System.out.println(":------- | :------: | :------: | :------: | :------: ");
       for (final var result : results) {
         System.out.println(result.markdownRow());
       }
