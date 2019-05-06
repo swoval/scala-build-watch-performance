@@ -9,7 +9,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.AccessDeniedException;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -28,9 +27,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,6 +38,7 @@ public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
   private static boolean isWin = System.getProperty("os.name", "").toLowerCase().startsWith("win");
+  private static final Random random = new Random();
 
   private static Path srcDirectory(final String config) {
     return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
@@ -61,7 +61,7 @@ public class Main {
   }
 
   public static void main(final String[] args)
-      throws IOException, URISyntaxException, TimeoutException {
+      throws IOException, InterruptedException, URISyntaxException, TimeoutException {
     var prev = '\0';
     var warmupIterations = 3;
     var iterations = 5;
@@ -174,11 +174,12 @@ public class Main {
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
-        try {
-          run(project, iterations, warmupIterations);
+        try (final var watcher = PathWatchers.get(true)) {
+          watcher.register(project.baseDirectory, 0);
+          run(project, 0, iterations, warmupIterations, watcher);
           project.genSources(extraSources);
           System.out.println("generated " + extraSources + " sources");
-          run(project, iterations, warmupIterations);
+          run(project, extraSources, iterations, warmupIterations, watcher);
         } finally {
           project.close();
         }
@@ -188,33 +189,26 @@ public class Main {
     }
   }
 
-  private static void run(final Project project, final int iterations, final int warmupIterations)
+  private static void run(
+      final Project project,
+      final int count,
+      final int iterations,
+      final int warmupIterations,
+      final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
-    try (final PathWatcher<PathWatchers.Event> watcher = PathWatchers.get(true)) {
-      final var watchFile = project.getBaseDirectory().resolve("watch.out");
-      watcher.register(watchFile, -1);
-      final LinkedBlockingQueue<Integer> queue = new LinkedBlockingQueue<>();
-      watcher.addObserver(
-          new Observer<>() {
-            @Override
-            public void onError(final Throwable t) {}
-
-            @Override
-            public void onNext(final Event event) {
-              queue.offer(1);
-            }
-          });
+    try {
       long totalElapsed = 0;
-      queue.clear();
-      System.out.println("Waiting for startup");
-      if (queue.poll(4, TimeUnit.MINUTES) == null)
-        throw new TimeoutException("Failed to touch expected file");
+      {
+        System.out.println("Waiting for startup");
+        final var updateResult = project.updateAkkaMain(watcher, count);
+        if (!updateResult.latch.await(4, TimeUnit.MINUTES))
+          throw new TimeoutException("Failed to touch expected file");
+        System.out.println("Waited for startup");
+      }
       for (int i = -warmupIterations; i < iterations; ++i) {
-        queue.clear();
-        long touchLastModified = project.updateAkkaMain();
-        if (queue.poll(30, TimeUnit.SECONDS) != null) {
-          long watchFileLastModified = getModifiedTimeOrZero(watchFile);
-          long elapsed = watchFileLastModified - touchLastModified;
+        final var updateResult = project.updateAkkaMain(watcher, count);
+        if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
+          long elapsed = updateResult.elapsed();
           if (elapsed > 0) {
             // Discard the first run that includes build tool startup
             if (i >= 0) totalElapsed += elapsed;
@@ -298,21 +292,65 @@ public class Main {
     }
   }
 
+  private static class UpdateResult {
+    private final CountDownLatch latch;
+    private final long lastModifiedTime;
+    private final Path watchPath;
+
+    final long elapsed() {
+      return getModifiedTimeOrZero(watchPath) - lastModifiedTime;
+    }
+
+    UpdateResult(final CountDownLatch latch, final Path watchPath, final long lastModifiedTime) {
+      this.lastModifiedTime = lastModifiedTime;
+      this.latch = latch;
+      this.watchPath = watchPath;
+    }
+  }
+
   private static class Project implements AutoCloseable {
     private final Path baseDirectory;
     private final Path projectBaseDirectory;
-    private final String akkaMainContent;
-    private final Path akkaMainPath;
+    private final Path watchPath;
+    private final Path mainSrcDirectory;
     private final ForkProcess forkProcess;
 
-    Path getBaseDirectory() {
-      return baseDirectory;
-    }
+    UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
+        throws IOException {
+      final long rand = random.nextLong();
+      final var newPath = baseDirectory.resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
+      System.out.println("Waiting for " + newPath);
+      final var latch = new CountDownLatch(1);
+      watcher.addObserver(
+          new Observer<>() {
+            @Override
+            public void onError(final Throwable t) {}
 
-    long updateAkkaMain() throws IOException {
-      final String append = "\n//" + UUID.randomUUID().toString();
-      Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
-      return getModifiedTimeOrZero(akkaMainPath);
+            @Override
+            public void onNext(final Event event) {
+              if (event.getTypedPath().getPath().equals(newPath)) {
+                try {
+                  if (Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
+                } catch (final NumberFormatException e) {
+                  // ignore this, it means the file doesn't exist
+                } catch (final Exception e) {
+                  e.printStackTrace();
+                }
+              }
+            }
+          });
+      final var pathString = newPath.toString().replaceAll("\\\\", "\\\\\\\\");
+      final var blahString =
+          mainSrcDirectory.resolve("blah").toString().replaceAll("\\\\", "\\\\\\\\");
+      final String content =
+          "package sbt.benchmark\n\n"
+              + "import java.nio.file.Paths\n"
+              + "object WatchFile {\n"
+              + ("  val path = java.nio.file.Paths.get(\"" + pathString + "\")\n")
+              + ("  val blahPath = java.nio.file.Paths.get(\"" + blahString + "\")\n")
+              + "}";
+      Files.writeString(watchPath, content);
+      return new UpdateResult(latch, newPath, getModifiedTimeOrZero(watchPath));
     }
 
     Project(
@@ -322,12 +360,12 @@ public class Main {
         final String... commands)
         throws IOException, URISyntaxException {
       this.baseDirectory = baseDirectory;
-      final var mainSrcDirectory =
+      this.mainSrcDirectory =
           Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
-      akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
-      akkaMainContent = loadSourceFile("AkkaMain.scala");
+      this.watchPath = mainSrcDirectory.resolve("WatchFile.scala");
+      final var akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
       this.projectBaseDirectory = projectBaseDirectory;
-      Files.writeString(akkaMainPath, akkaMainContent);
+      Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
       final var testSrcDirectory =
           Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("test")));
       Files.writeString(
