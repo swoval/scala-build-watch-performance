@@ -1,4 +1,3 @@
-import java.io.File
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.{Files, Path}
 
@@ -9,17 +8,20 @@ javacOptions ++= Seq("-source", "11", "-target", "11")
 val genBinary = taskKey[Path]("generate an executable binary")
 genBinary := {
   val dir = target.value.toPath
-  val classPath = (fullClasspathAsJars in Runtime).value.map(_.data).mkString(File.pathSeparator)
+  val assembledJar = assembly.value
   val content =
     s"""
        |#!/bin/bash
        |
        |java=`which java`
-       |args="--class-path $classPath build.performance.Main"
+       |args="-jar $assembledJar build.performance.Main"
        |exec "java" $$args "$$@"
      """.stripMargin
 
   val binary = Files.write(dir.resolve("watch-test.out"), content.getBytes)
+  binary.toFile.setExecutable(true)
+  binary.toFile.setReadable(true)
+  binary.toFile.setWritable(true)
   val permissions = PosixFilePermissions.fromString("rwxrwxrwx")
   Files.setPosixFilePermissions(binary, permissions)
   binary
