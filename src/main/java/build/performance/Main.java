@@ -4,7 +4,6 @@ import com.swoval.files.FileTreeViews.Observer;
 import com.swoval.files.PathWatcher;
 import com.swoval.files.PathWatchers;
 import com.swoval.files.PathWatchers.Event;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -241,6 +240,7 @@ public class Main {
   private static class ForkProcess implements AutoCloseable {
     final Process process;
     final Thread thread;
+    final AtomicBoolean isClosed = new AtomicBoolean(false);
     final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     ForkProcess(final Process process) {
@@ -287,11 +287,13 @@ public class Main {
 
     @Override
     public void close() {
-      if (isShutdown.compareAndSet(false, true)) {
-        var newProcess = process.destroyForcibly();
-        thread.interrupt();
+      if (isClosed.compareAndSet(false, true)) {
         try {
-          newProcess.waitFor(10, TimeUnit.SECONDS);
+          process.destroy();
+          process.waitFor(10, TimeUnit.SECONDS);
+          isShutdown.set(true);
+          System.out.println("Waited for process");
+          thread.interrupt();
           thread.join();
         } catch (final InterruptedException e) {
           e.printStackTrace();
@@ -338,7 +340,8 @@ public class Main {
       if (!javaHome.isEmpty()) {
         final var commandName =
             System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
-        commands[0] = javaHome + File.separator + "bin" + File.separator + commandName;
+        commands[0] =
+            Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
       }
       System.out.println("Running " + commands[0] + " in " + baseDirectory);
       final var builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
