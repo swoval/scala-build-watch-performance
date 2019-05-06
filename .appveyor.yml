@@ -5,24 +5,16 @@ build: off
 init:
   - git config --global core.autocrlf input
 
-install:
-  - SET JAVA_HOME: C:\Program Files\Java\jdk11
-  - SET PATH=%JAVA_HOME%\bin;%PATH%
-  - SET CI=true
+environment:
+  JAVA_HOME: C:\Program Files\Java\jdk11
 
-  - ps: |
-      Add-Type -AssemblyName System.IO.Compression.FileSystem
-      if (!(Test-Path -Path "C:\sbt" )) {
-        (new-object System.Net.WebClient).DownloadFile(
-          'https://github.com/sbt/sbt/releases/download/v1.0.4/sbt-1.0.4.zip',
-          'C:\sbt-bin.zip'
-        )
-        [System.IO.Compression.ZipFile]::ExtractToDirectory("C:\sbt-bin.zip", "C:\sbt")
-      }
-  - SET PATH=C:\sbt\sbt\bin;%PATH%
-  - SET SBT_OPTS=-XX:MaxPermSize=2g -Xmx4g -Dsbt.supershell=never -Dfile.encoding=UTF8
+install:
+  - SET PATH=%JAVA_HOME%\bin;%PATH%
+  - md target\classes
+
 test_script:
-    - sbt "run -i 20 -w 3 -j C:\Program Files\Java\jdk1.8.0 sbt-1.3.0 sbt-0.13.17 gradle-5.4.1"
+    - javac -cp lib\swoval/file-tree-views-2.1.1.jar src\main\java\build\performance\Main.java -d target/classes
+    - java -cp "target\classes;src\main\resources;lib\swoval\file-tree-views-2.1.1.jar" build.performance.Main -i 10 -w 5 -e 5000 sbt-1.3.0 sbt-0.13.7 gradle-5.4.1 -j "C:\Program Files\Java\jdk1.8.0"
 
 cache:
   - '%USERPROFILE%\.ivy2\cache'
