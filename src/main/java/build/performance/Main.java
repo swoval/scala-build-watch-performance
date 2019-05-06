@@ -441,8 +441,13 @@ public class Main {
         try {
           Files.deleteIfExists(path);
           i = 1000;
-        } catch (final AccessDeniedException e) {
+        } catch (final IOException e) {
           i += 1;
+          try {
+            Thread.sleep(3);
+          } catch (final InterruptedException ex) {
+            throw e;
+          }
           if (i >= 100) throw e;
         }
       }
