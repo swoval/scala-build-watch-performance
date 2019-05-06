@@ -9,13 +9,17 @@ matrix:
    - os: linux
      language: java
      dist: trusty
+     env:
+         JABBA_HOME=~/.jabba/jdk/adopt@1.11.0-3
 
    - os: osx
      language: java
      osx_image: xcode9.3
+     env:
+         JABBA_HOME=~/.jabba/jdk/adopt@1.11.0-3/Contents/Home
 
 before_install:
-    - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.0/install.sh | bash && . ~/.jabba/jabba.sh
+    - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.0/install.sh | bash
     - ~/.jabba/bin/jabba install adopt@1.11.0-3
 install:
 
