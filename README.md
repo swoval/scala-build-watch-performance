@@ -1,4 +1,15 @@
 
+### linux results
+project | min (ms) | max (ms) | mean (ms) | total (ms)
+:------- | :------: | :------: | :------: | :------: 
+gradle-5.4.1 (3 source files) | 2680 | 2988 | 2796 | 78046
+mill-0.3.6 (3 source files) | 4772 | 5200 | 5021 | 131054
+sbt-0.13.17 (3 source files) | 1580 | 2284 | 1772 | 153263
+sbt-1.3.0 (3 source files) | 364 | 668 | 502 | 80426
+gradle-5.4.1 (5003 source files) | 3948 | 4368 | 4125 | 112568
+mill-0.3.6 (5003 source files) | 6812 | 7744 | 7230 | 155183
+sbt-0.13.17 (5003 source files) | 2448 | 3560 | 2634 | 84141
+sbt-1.3.0 (5003 source files) | 1040 | 1308 | 1123 | 66833
 
 ### mac results
 project | min (ms) | max (ms) | mean (ms) | total (ms)
