@@ -1,7 +1,7 @@
 
 ### linux results
 project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------: 
+:------- | :------: | :------: | :------: | :------:
 gradle-5.4.1 (3 source files) | 2680 | 2988 | 2796 | 78046
 mill-0.3.6 (3 source files) | 4772 | 5200 | 5021 | 131054
 sbt-0.13.17 (3 source files) | 1580 | 2284 | 1772 | 153263
@@ -26,9 +26,11 @@ sbt-1.3.0 (5003 source files) | 1410 | 1681 | 1530 | 62114
 ### windows results
  project | min (ms) | max (ms) | mean (ms) | total (ms)
 :------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 2411 | 2652 | 2488 | 67139
-sbt-0.13.17 (3 source files) | 1435 | 1727 | 1519 | 206654
-sbt-1.3.0 (3 source files) | 360 | 826 | 450 | 36351
-gradle-5.4.1 (5003 source files) | 3818 | 4078 | 3932 | 98101
-sbt-0.13.17 (5003 source files) | 3348 | 3977 | 3589 | 90353
-sbt-1.3.0 (5003 source files) | 1134 | 1256 | 1181 | 59381
+gradle-5.4.1 (3 source files) | 2410 | 2619 | 2491 | 69213
+mill-0.3.6 (3 source files) | 3982 | 4380 | 4140 | 108310
+sbt-0.13.17 (3 source files) | 1466 | 1904 | 1550 | 43391
+sbt-1.3.0 (3 source files) | 324 | 524 | 396 | 35296
+gradle-5.4.1 (5003 source files) | 3798 | 4106 | 3896 | 96041
+mill-0.3.6 (5003 source files) | 7199 | 7958 | 7621 | 155524
+sbt-0.13.17 (5003 source files) | 3548 | 4122 | 3680 | 93753
+sbt-1.3.0 (5003 source files) | 1148 | 1313 | 1234 | 61056
