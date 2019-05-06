@@ -489,18 +489,17 @@ public class Main {
 
     private void retryDelete(final Path path) throws IOException {
       var i = 0;
-      while (i < 100) {
+      while (i < 200) {
         try {
           Files.deleteIfExists(path);
           i = 1000;
         } catch (final IOException e) {
           i += 1;
           try {
-            Thread.sleep(3);
+            Thread.sleep(5);
           } catch (final InterruptedException ex) {
             throw e;
           }
-          if (i >= 100) throw e;
         }
       }
     }
