@@ -26,6 +26,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
@@ -45,11 +46,11 @@ public class Main {
   }
 
   static {
-    allProjects = new HashSet<>();
+    allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
-    if (!isWin) allProjects.add("mill-0.3.6");
+    allProjects.add("mill-0.3.6");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -139,6 +140,7 @@ public class Main {
             break;
         }
       }
+      final var results = new ArrayList<RunResult>();
       for (final var projectName : projects) {
         final var base = tempDir.get();
         final var projectBase = base.resolve(projectName);
@@ -147,11 +149,13 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           project =
-              new Project(projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
+              new Project(
+                  projectName, projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           project =
               new Project(
+                  projectName,
                   projectBase,
                   projectBase.resolve("perf"),
                   javaHome,
@@ -161,7 +165,8 @@ public class Main {
                   "-Djna.nosys=true",
                   "-cp",
                   binary,
-                  "mill.main.client.MillClientMain",
+                  "mill.MillMain",
+                  "-i",
                   "-w",
                   "perf.test");
         } else if (projectName.startsWith("gradle")) {
@@ -169,6 +174,7 @@ public class Main {
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
           project =
               new Project(
+                  projectName,
                   projectBase,
                   projectBase,
                   javaHome,
@@ -186,20 +192,60 @@ public class Main {
         }
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(project.baseDirectory, 0);
-          run(project, 0, timeout, iterations, warmupIterations, watcher);
+          results.add(run(project, 0, timeout, iterations, warmupIterations, watcher));
           project.genSources(extraSources);
           System.out.println("generated " + extraSources + " sources");
-          run(project, extraSources, timeout, iterations, warmupIterations, watcher);
+          results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
         } finally {
           project.close();
         }
+      }
+      Collections.sort(
+          results,
+          (left, right) ->
+              left.count == right.count
+                  ? left.name.compareTo(right.name)
+                  : left.count - right.count);
+      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
+      System.out.println(":------- | :------: | :------: | :------: | :------: ");
+      for (final var result : results) {
+        System.out.println(result.markdownRow());
       }
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
     }
   }
 
-  private static void run(
+  private static final class RunResult {
+    private final long[] results;
+    private final int count;
+    private final String name;
+    private final long totalMs;
+
+    RunResult(final String name, final int count, final long[] results, final long totalMs) {
+      this.count = count;
+      this.name = name;
+      this.results = results;
+      this.totalMs = totalMs;
+    }
+
+    String markdownRow() {
+      var min = Long.MAX_VALUE;
+      var max = Long.MIN_VALUE;
+      var avg = 0;
+      for (var elapsed : results) {
+        min = Math.min(min, elapsed);
+        max = Math.max(max, elapsed);
+        avg += elapsed;
+      }
+      avg /= results.length;
+      return this.name
+          + (" (" + (count + 3) + " source files) | ")
+          + (min + " | " + max + " | " + avg + " | " + totalMs);
+    }
+  }
+
+  private static RunResult run(
       final Project project,
       final int count,
       final int timeoutMinutes,
@@ -207,7 +253,10 @@ public class Main {
       final int warmupIterations,
       final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
+    final var result = new long[iterations];
+    final var start = System.nanoTime();
     try {
+      project.start();
       long totalElapsed = 0;
       {
         System.out.println("Waiting for startup");
@@ -222,7 +271,10 @@ public class Main {
           long elapsed = updateResult.elapsed();
           if (elapsed > 0) {
             // Discard the first run that includes build tool startup
-            if (i >= 0) totalElapsed += elapsed;
+            if (i >= 0) {
+              totalElapsed += elapsed;
+              result[i] = elapsed;
+            }
           } else {
             i -= 1;
           }
@@ -233,9 +285,12 @@ public class Main {
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
+      project.close();
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
     }
+    final var end = System.nanoTime();
+    return new RunResult(project.name, count, result, (end - start) / 1000000);
   }
 
   private static class ForkProcess implements AutoCloseable {
@@ -324,7 +379,9 @@ public class Main {
     private final Path projectBaseDirectory;
     private final Path watchPath;
     private final Path mainSrcDirectory;
-    private final ForkProcess forkProcess;
+    private final ProcessBuilder builder;
+    private final String name;
+    private ForkProcess forkProcess;
 
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
         throws IOException {
@@ -341,7 +398,8 @@ public class Main {
             public void onNext(final Event event) {
               if (event.getTypedPath().getPath().equals(newPath)) {
                 try {
-                  if (Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
+                  if (event.getTypedPath().isFile()
+                      && Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
                 } catch (final NumberFormatException e) {
                   // ignore this, it means the file doesn't exist
                 } catch (final Exception e) {
@@ -365,11 +423,13 @@ public class Main {
     }
 
     Project(
+        final String name,
         final Path baseDirectory,
         final Path projectBaseDirectory,
         final String javaHome,
         final String... commands)
         throws IOException, URISyntaxException {
+      this.name = name;
       this.baseDirectory = baseDirectory;
       this.mainSrcDirectory =
           Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
@@ -388,9 +448,8 @@ public class Main {
             Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
       }
       System.out.println("Running " + commands[0] + " in " + baseDirectory);
-      final var builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
+      builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
       if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
-      this.forkProcess = new ForkProcess(builder.start());
     }
 
     void genSources(int count) throws IOException {
@@ -401,10 +460,15 @@ public class Main {
       }
     }
 
+    void start() throws IOException {
+      if (forkProcess == null) forkProcess = new ForkProcess(builder.start());
+    }
+
     @Override
     public void close() {
       if (forkProcess != null) {
         forkProcess.close();
+        forkProcess = null;
       }
     }
   }
@@ -481,18 +545,17 @@ public class Main {
 
     private void retryDelete(final Path path) throws IOException {
       var i = 0;
-      while (i < 100) {
+      while (i < 200) {
         try {
           Files.deleteIfExists(path);
           i = 1000;
         } catch (final IOException e) {
           i += 1;
           try {
-            Thread.sleep(3);
+            Thread.sleep(5);
           } catch (final InterruptedException ex) {
             throw e;
           }
-          if (i >= 100) throw e;
         }
       }
     }
