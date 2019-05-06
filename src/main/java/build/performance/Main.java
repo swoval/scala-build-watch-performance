@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -52,6 +53,7 @@ public class Main {
     var iterations = 5;
     var baseDirectory = Optional.<Path>empty();
     var extraSources = 5000;
+    var javaHome = Optional.<String>empty();
 
     var sourceDirectory = Optional.<Path>empty();
     var projects = new ArrayList<String>();
@@ -60,6 +62,10 @@ public class Main {
         switch (prev) {
           case 'b':
             baseDirectory = Optional.of(Paths.get(arg));
+            prev = '\0';
+            break;
+          case 'j':
+            javaHome = Optional.of(arg);
             prev = '\0';
             break;
           case 'e':
@@ -85,8 +91,12 @@ public class Main {
               prev = 'e';
             } else if (arg.equals("-s") || arg.equals("--source-directory")) {
               prev = 's';
+            } else if (arg.equals("-j") || arg.equals("--java-home")) {
+              prev = 'j';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
               prev = 'i';
+            } else if (arg.equals("all")) {
+              projects.addAll(allProjects);
             } else if (arg.equals("-w") || arg.equals("--warmup-iterations")) {
               prev = 'w';
             } else if (allProjects.contains(arg)) {
@@ -112,13 +122,15 @@ public class Main {
         final Project project;
         if (projectName.startsWith("sbt")) {
           var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
-          project = new Project(projectBase, projectBase, "java", "-jar", binary, "~test");
+          project =
+              new Project(projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           project =
               new Project(
                   projectBase,
                   projectBase.resolve("perf"),
+                  javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
                   "-DMILL_VERSION=0.3.6",
@@ -135,6 +147,7 @@ public class Main {
               new Project(
                   projectBase,
                   projectBase,
+                  javaHome,
                   "java",
                   "-Xmx64m",
                   "-Xms64m",
@@ -283,34 +296,56 @@ public class Main {
 
     long updateAkkaMain() throws IOException {
       final String append = "\n//" + UUID.randomUUID().toString();
-      Files.write(akkaMainPath, (akkaMainContent + append).getBytes());
+      setPermissions(Files.write(akkaMainPath, (akkaMainContent + append).getBytes()));
       return getModifiedTimeOrZero(akkaMainPath);
     }
 
-    Project(final Path baseDirectory, final Path projectBaseDirectory, final String... commands)
+    private static void setDirPermissions(final Path base, final Path relative) throws IOException {
+      final var it = relative.iterator();
+      var path = base;
+      while (it.hasNext()) {
+        path = path.resolve(it.next());
+        setPermissions(path);
+      }
+    }
+
+    Project(
+        final Path baseDirectory,
+        final Path projectBaseDirectory,
+        final Optional<String> javaHome,
+        final String... commands)
         throws IOException, URISyntaxException {
       this.baseDirectory = baseDirectory;
-
-      final Path mainSrcDirectory = projectBaseDirectory.resolve(srcDirectory("main"));
-      Files.createDirectories(mainSrcDirectory);
+      setPermissions(baseDirectory);
+      if (!baseDirectory.equals(projectBaseDirectory)) setPermissions(projectBaseDirectory);
+      final var relativeMainSourceDirectory = srcDirectory("main");
+      final var mainSrcDirectory = projectBaseDirectory.resolve(relativeMainSourceDirectory);
+      setPermissions(Files.createDirectories(mainSrcDirectory));
+      setDirPermissions(projectBaseDirectory, relativeMainSourceDirectory);
       akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
       akkaMainContent = loadSourceFile("AkkaMain.scala");
       this.projectBaseDirectory = projectBaseDirectory;
-      Files.write(akkaMainPath, akkaMainContent.getBytes());
-      final Path testSrcDirectory = projectBaseDirectory.resolve(srcDirectory("test"));
-      Files.createDirectories(testSrcDirectory);
-      Files.write(
-          testSrcDirectory.resolve("AkkaPerfTest.scala"),
-          loadSourceFile("AkkaPerfTest.scala").getBytes());
-      this.forkProcess =
-          new ForkProcess(new ProcessBuilder(commands).directory(baseDirectory.toFile()).start());
+      setPermissions(Files.write(akkaMainPath, akkaMainContent.getBytes()));
+      final var relativeTestSrcDirectory = srcDirectory("test");
+      final var testSrcDirectory = projectBaseDirectory.resolve(relativeTestSrcDirectory);
+      setPermissions(Files.createDirectories(testSrcDirectory));
+      setDirPermissions(projectBaseDirectory, relativeTestSrcDirectory);
+      setPermissions(
+          Files.write(
+              testSrcDirectory.resolve("AkkaPerfTest.scala"),
+              loadSourceFile("AkkaPerfTest.scala").getBytes()));
+      System.out.println("Running " + commands[0] + " in " + baseDirectory);
+      final var builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
+      javaHome.ifPresent(h -> builder.environment().put("JAVA_HOME", h));
+      this.forkProcess = new ForkProcess(builder.start());
     }
 
     void genSources(int count) throws IOException {
       final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
       Files.createDirectories(src);
       for (int i = 1; i <= count; ++i) {
-        Files.write(src.resolve("Blah" + i + ".scala"), generatedSource(i).getBytes());
+        setPermissions(
+            Files.write(src.resolve("Blah" + i + ".scala"), generatedSource(i).getBytes()));
       }
     }
 
@@ -338,6 +373,12 @@ public class Main {
     return new String(Files.readAllBytes(Paths.get(uri)));
   }
 
+  private static Path setPermissions(final Path path) throws IOException {
+    path.toFile().setReadable(true);
+    path.toFile().setWritable(true);
+    return path;
+  }
+
   private static void setupProject(final String project, final Path tempDir) {
     try {
       final URL url = Main.class.getClassLoader().getResource(project);
@@ -352,14 +393,15 @@ public class Main {
       }
       final var base = path.getParent();
       final var temp = tempDir.resolve(path.getFileName().toString());
-      Files.createDirectories(temp);
+      setPermissions(Files.createDirectories(temp));
       Files.walkFileTree(
           path,
           new FileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(
                 final Path dir, final BasicFileAttributes attrs) throws IOException {
-              Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
+              setPermissions(
+                  Files.createDirectories(tempDir.resolve(base.relativize(dir).toString())));
               return FileVisitResult.CONTINUE;
             }
 
@@ -368,7 +410,8 @@ public class Main {
                 throws IOException {
               if (attrs.isRegularFile()) {
                 var content = Files.readAllBytes(file);
-                Files.write(tempDir.resolve(base.relativize(file).toString()), content);
+                setPermissions(
+                    Files.write(tempDir.resolve(base.relativize(file).toString()), content));
               }
               return FileVisitResult.CONTINUE;
             }
@@ -389,10 +432,24 @@ public class Main {
   }
 
   private static class TempDirectory implements AutoCloseable {
-    private final Path tempDir = Files.createTempDirectory("build-perf").toRealPath();
+    private final Path tempDir =
+        setPermissions(Files.createTempDirectory("build-perf").toRealPath());
 
     Path get() {
       return tempDir;
+    }
+
+    private void retryDelete(final Path path) throws IOException {
+      var i = 0;
+      while (i < 100) {
+        try {
+          Files.deleteIfExists(path);
+          i = 1000;
+        } catch (final AccessDeniedException e) {
+          i += 1;
+          if (i >= 100) throw e;
+        }
+      }
     }
 
     private void closeImpl(final Path directory) throws IOException {
@@ -416,7 +473,7 @@ public class Main {
                   if (attrs.isDirectory()) {
                     closeImpl(file);
                   }
-                  Files.deleteIfExists(file);
+                  retryDelete(file);
                 }
                 return FileVisitResult.CONTINUE;
               }
@@ -429,7 +486,7 @@ public class Main {
               @Override
               public FileVisitResult postVisitDirectory(Path dir, IOException exc)
                   throws IOException {
-                Files.deleteIfExists(dir);
+                retryDelete(dir);
                 return FileVisitResult.CONTINUE;
               }
             });
