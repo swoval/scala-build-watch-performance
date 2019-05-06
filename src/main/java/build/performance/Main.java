@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
   private static Set<String> allProjects;
+  private static final FileSystem jarFileSystem;
 
   private static Path srcDirectory(final String config) {
     return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
@@ -44,6 +45,12 @@ public class Main {
     allProjects.add("sbt-1.3.0");
     allProjects.add("mill-0.3.6");
     allProjects.add("gradle-5.4.1");
+    try {
+      final var uri = Main.class.getClassLoader().getResource("sbt-1.3.0").toURI();
+      jarFileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
+    } catch (final Exception e) {
+      throw new ExceptionInInitializerError(e);
+    }
   }
 
   public static void main(final String[] args)
@@ -386,8 +393,7 @@ public class Main {
       final URI uri = url.toURI();
       Path path;
       if (uri.getScheme().equals("jar")) {
-        FileSystem fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
-        path = fileSystem.getPath("/" + project);
+        path = jarFileSystem.getPath("/" + project);
       } else {
         path = Paths.get(uri);
       }
