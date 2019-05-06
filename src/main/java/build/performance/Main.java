@@ -38,7 +38,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
-  private static boolean isWin = System.getProperty("os.name", "").toLowerCase().startsWith("win");
   private static final Random random = new Random();
 
   private static Path srcDirectory(final String config) {
@@ -46,11 +45,11 @@ public class Main {
   }
 
   static {
-    allProjects = new HashSet<>();
+    allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
-    if (!isWin) allProjects.add("mill-0.3.6");
+    allProjects.add("mill-0.3.6");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
