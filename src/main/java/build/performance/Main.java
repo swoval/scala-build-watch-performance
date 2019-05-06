@@ -462,6 +462,7 @@ public class Main {
 
   private static class TempDirectory implements AutoCloseable {
     private final Path tempDir;
+    private Thread shutdownHook;
 
     Path get() {
       return tempDir;
@@ -530,6 +531,7 @@ public class Main {
 
     @Override
     public void close() throws IOException {
+      Runtime.getRuntime().removeShutdownHook(shutdownHook);
       closeImpl(tempDir);
     }
 
@@ -551,6 +553,18 @@ public class Main {
               Clock.systemDefaultZone().getZone());
       final var text = formatter.format(zdt);
       tempDir = Files.createDirectories(base.resolve(text));
+      shutdownHook =
+          new Thread("Cleanup-" + tempDir) {
+            @Override
+            public void run() {
+              try {
+                closeImpl(tempDir);
+              } catch (final Exception e) {
+                e.printStackTrace();
+              }
+            }
+          };
+      Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
   }
 
