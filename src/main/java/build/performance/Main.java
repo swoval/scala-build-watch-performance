@@ -54,7 +54,10 @@ public class Main {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
       final var uri = url.toURI();
-      jarFileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
+      jarFileSystem =
+          uri.getScheme().equals("jar")
+              ? FileSystems.newFileSystem(uri, Collections.emptyMap())
+              : null;
     } catch (final Exception e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -427,7 +430,7 @@ public class Main {
       if (url == null) throw new NullPointerException();
       final URI uri = url.toURI();
       Path path;
-      if (uri.getScheme().equals("jar")) {
+      if (uri.getScheme().equals("jar") && jarFileSystem != null) {
         path = jarFileSystem.getPath("/" + project);
       } else {
         path = Paths.get(uri);
