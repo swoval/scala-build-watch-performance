@@ -804,7 +804,7 @@ public class Main {
       var up = false;
       while (!up) {
         try {
-          up = runProc(5, TimeUnit.SECONDS, true, "python", binary, "about");
+          up = runProc(5, TimeUnit.SECONDS, false, "python", binary, "about");
           Thread.sleep(100);
         } catch (final IOException | InterruptedException e) {
         }
