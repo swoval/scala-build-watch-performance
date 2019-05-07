@@ -31,14 +31,16 @@ sbt-0.13.17 (5003 source files) | 2571 | 3667 | 2840 | 88025
 ### mac
 project | min (ms) | max (ms) | mean (ms) | total (ms)
 :------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 8842 | 11470 | 10340 | 162813
-mill-0.3.6 (3 source files) | 3716 | 4107 | 3969 | 99997
-sbt-0.13.17 (3 source files) | 1332 | 1988 | 1601 | 44007
-sbt-1.3.0 (3 source files) | 324 | 470 | 371 | 28189
-gradle-5.4.1 (5003 source files) | 9046 | 11345 | 10329 | 279254
-mill-0.3.6 (5003 source files) | 6504 | 8985 | 7170 | 139627
-sbt-0.13.17 (5003 source files) | 3164 | 3726 | 3375 | 96043
-sbt-1.3.0 (5003 source files) | 1410 | 1681 | 1530 | 62114
+bloop-1.2.5 (3 source files) | 4199 | 4636 | 4298 | 81494
+gradle-5.4.1 (3 source files) | 2195 | 2457 | 2305 | 46825
+mill-0.3.6 (3 source files) | 3398 | 4074 | 3672 | 89003
+sbt-0.13.17 (3 source files) | 1225 | 1583 | 1339 | 37880
+sbt-1.3.0 (3 source files) | 285 | 426 | 339 | 28756
+bloop-1.2.5 (5003 source files) | 5137 | 5836 | 5378 | 113274
+gradle-5.4.1 (5003 source files) | 4239 | 4436 | 4359 | 91124
+mill-0.3.6 (5003 source files) | 5883 | 7248 | 6375 | 134368
+sbt-0.13.17 (5003 source files) | 3275 | 3979 | 3594 | 91920
+sbt-1.3.0 (5003 source files) | 1251 | 1526 | 1396 | 56389
 
 Note that gradle performs very poorly because it uses the built in jvm
 [WatchService](https://docs.oracle.com/javase/8/docs/api/java/nio/file/WatchService.html)
