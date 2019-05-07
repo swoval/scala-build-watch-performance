@@ -795,7 +795,7 @@ public class Main {
         "python", dir.resolve("install.py").toString(), "--dest", dir.resolve("dist").toString());
     final var sbtLaunchJar = dir.resolve("bin").resolve("sbt-launch.jar").toString();
     final var builder = getBuilder(dir, javaHome, "java", "-jar", sbtLaunchJar, "bloopInstall");
-    runProc(5, TimeUnit.MINUTES, false, builder);
+    runProc(5, TimeUnit.MINUTES, true, builder);
   }
 
   private static Supplier<Boolean> bloopUpCheck(final Path dir) {
@@ -804,7 +804,7 @@ public class Main {
       var up = false;
       while (!up) {
         try {
-          up = runProc(100, TimeUnit.MILLISECONDS, true, "python", binary, "about");
+          up = runProc(5, TimeUnit.SECONDS, true, "python", binary, "about");
           Thread.sleep(100);
         } catch (final IOException | InterruptedException e) {
         }

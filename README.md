@@ -18,16 +18,15 @@ total time is the time between forking the process and all of the test iteration
 completing.
 
 ### linux
-project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 2680 | 2988 | 2796 | 78046
-mill-0.3.6 (3 source files) | 4772 | 5200 | 5021 | 131054
-sbt-0.13.17 (3 source files) | 1580 | 2284 | 1772 | 153263
-sbt-1.3.0 (3 source files) | 364 | 668 | 502 | 80426
-gradle-5.4.1 (5003 source files) | 3948 | 4368 | 4125 | 112568
-mill-0.3.6 (5003 source files) | 6812 | 7744 | 7230 | 155183
-sbt-0.13.17 (5003 source files) | 2448 | 3560 | 2634 | 84141
-sbt-1.3.0 (5003 source files) | 1040 | 1308 | 1123 | 66833
+bloop-1.2.5 (3 source files) | 6760 | 8392 | 7219 | 152217
+gradle-5.4.1 (3 source files) | 2755 | 3282 | 2965 | 81608
+mill-0.3.6 (3 source files) | 4734 | 5261 | 5069 | 133660
+sbt-0.13.17 (3 source files) | 1591 | 2059 | 1753 | 51715
+sbt-1.3.0 (3 source files) | 428 | 675 | 523 | 44759
+bloop-1.2.5 (5003 source files) | 7256 | 8252 | 7681 | 165192
+gradle-5.4.1 (5003 source files) | 4074 | 4442 | 4263 | 118309
+mill-0.3.6 (5003 source files) | 6985 | 7548 | 7174 | 156972
+sbt-0.13.17 (5003 source files) | 2571 | 3667 | 2840 | 88025
 
 ### mac
 project | min (ms) | max (ms) | mean (ms) | total (ms)
@@ -47,13 +46,13 @@ to monitor file. On osx, the defualt `WatchService` is a slow polling implementa
 
 
 ### windows
- project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 2410 | 2619 | 2491 | 69213
-mill-0.3.6 (3 source files) | 3982 | 4380 | 4140 | 108310
-sbt-0.13.17 (3 source files) | 1466 | 1904 | 1550 | 43391
-sbt-1.3.0 (3 source files) | 324 | 524 | 396 | 35296
-gradle-5.4.1 (5003 source files) | 3798 | 4106 | 3896 | 96041
-mill-0.3.6 (5003 source files) | 7199 | 7958 | 7621 | 155524
-sbt-0.13.17 (5003 source files) | 3548 | 4122 | 3680 | 93753
-sbt-1.3.0 (5003 source files) | 1148 | 1313 | 1234 | 61056
+project | min (ms) | max (ms) | mean (ms) | total (ms)
+:-------: | :------: | :------: | :------: | :------:
+gradle-5.4.1 (3 source files) | 9900 | 10853 | 10310 | 161303
+mill-0.3.6 (3 source files) | 3432 | 3747 | 3587 | 87893
+sbt-0.13.17 (3 source files) | 1204 | 1535 | 1316 | 38361
+sbt-1.3.0 (3 source files) | 302 | 574 | 383 | 31899
+gradle-5.4.1 (5003 source files) | 9994 | 10785 | 10371 | 190361
+mill-0.3.6 (5003 source files) | 6227 | 6600 | 6399 | 124603
+sbt-0.13.17 (5003 source files) | 3233 | 3844 | 3454 | 96458
+sbt-1.3.0 (5003 source files) | 1430 | 1754 | 1553 | 65112
