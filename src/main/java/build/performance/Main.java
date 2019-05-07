@@ -323,7 +323,7 @@ public class Main {
         System.out.println("Waited for startup");
       }
       // bloop takes a moment to start watching files
-      if (project.name.startsWith("bloop")) Thread.sleep(1000);
+      if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
