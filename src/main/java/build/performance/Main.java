@@ -34,6 +34,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 public class Main {
   private static Set<String> allProjects;
@@ -46,6 +47,7 @@ public class Main {
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
+    allProjects.add("bloop-1.2.5");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -184,6 +186,40 @@ public class Main {
                   "-t",
                   "spec");
           project = new Project(projectName, layout, factory);
+        } else if (projectName.startsWith("bloop")) {
+          installBloop(projectBase, javaHome);
+          final var bloopJar = projectBase.resolve("dist").resolve("blp-coursier").toString();
+          layout = new ProjectLayout(projectBase, projectBase);
+          final var serverFactory =
+              new SimpleServerFactory(
+                  projectBase,
+                  javaHome,
+                  "java",
+                  "-jar",
+                  bloopJar,
+                  "launch",
+                  "ch.epfl.scala:bloop-frontend_2.12:1.2.5",
+                  "-r",
+                  "bintray:scalameta/maven",
+                  "-r",
+                  "bintray:scalacenter/releases",
+                  "-r",
+                  "https://oss.sonatype.org/content/repository/staging",
+                  "--main",
+                  "bloop.Server");
+          final var bloopBin = projectBase.resolve("dist").resolve("bloop").toString();
+          final var factory =
+              new ClientServerFactory(
+                  serverFactory,
+                  bloopUpCheck(projectBase),
+                  projectBase,
+                  javaHome,
+                  "python",
+                  bloopBin,
+                  "test",
+                  "bloop-1-2-5",
+                  "-w");
+          project = new Project(projectName, layout, factory);
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
@@ -201,12 +237,39 @@ public class Main {
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
       System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
-      System.out.println(":------- | :------: | :------: | :------: | :------: ");
+      System.out.println(":------- | :------: | :------: | :-------: | :--------: ");
       for (final var result : results) {
         System.out.println(result.markdownRow());
       }
       final Path src = sourceDirectory.orElse(null);
       baseDirectory.ifPresent(dir -> System.out.println(src));
+    }
+  }
+
+  private static boolean runProc(final String... commands) throws IOException {
+    return runProc(30, TimeUnit.SECONDS, false, commands);
+  }
+
+  private static boolean runProc(
+      final long duration, final TimeUnit timeUnit, final boolean quiet, final String... commands)
+      throws IOException {
+    return runProc(duration, timeUnit, quiet, new ProcessBuilder(commands));
+  }
+
+  private static boolean runProc(
+      final long duration,
+      final TimeUnit timeUnit,
+      final boolean quiet,
+      final ProcessBuilder builder)
+      throws IOException {
+    final var process = builder.start();
+    var thread = quiet ? null : new ProcessIOThread(process);
+    try {
+      return process.waitFor(duration, timeUnit) && process.exitValue() == 0;
+    } catch (final InterruptedException e) {
+      return false;
+    } finally {
+      if (thread != null) thread.interrupt();
     }
   }
 
@@ -259,6 +322,8 @@ public class Main {
           throw new TimeoutException("Failed to touch expected file");
         System.out.println("Waited for startup");
       }
+      // bloop takes a moment to start watching files
+      if (project.name.startsWith("bloop")) Thread.sleep(1000);
       for (int i = -warmupIterations; i < iterations; ++i) {
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
@@ -290,48 +355,11 @@ public class Main {
     final Process process;
     final Thread thread;
     final AtomicBoolean isClosed = new AtomicBoolean(false);
-    final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     ForkProcess(final Process process) {
       System.out.println("Managing process with pid " + process.pid());
       this.process = process;
-      thread =
-          new Thread("process-io-thread") {
-            @Override
-            public void run() {
-              // Reads the input and error streams of a process and dumps them to
-              // the main process output streams
-              final InputStream is = process.getInputStream();
-              final InputStream es = process.getErrorStream();
-              try {
-                while (!isShutdown.get()) {
-                  {
-                    final StringBuilder builder = new StringBuilder();
-                    while (is.available() > 0) {
-                      builder.append((char) is.read());
-                    }
-                    if (builder.length() > 0) {
-                      System.out.print(builder.toString());
-                    }
-                  }
-                  {
-                    final StringBuilder builder = new StringBuilder();
-                    while (es.available() > 0) {
-                      builder.append((char) es.read());
-                    }
-                    if (builder.length() > 0) {
-                      System.err.print(builder.toString());
-                    }
-                  }
-                  Thread.sleep(2);
-                }
-              } catch (final IOException | InterruptedException e) {
-                isShutdown.set(true);
-              }
-            }
-          };
-      thread.setDaemon(true);
-      thread.start();
+      thread = new ProcessIOThread(process);
     }
 
     @Override
@@ -340,7 +368,6 @@ public class Main {
         try {
           process.destroy();
           process.waitFor(10, TimeUnit.SECONDS);
-          isShutdown.set(true);
           thread.interrupt();
           thread.join();
         } catch (final InterruptedException e) {
@@ -434,15 +461,7 @@ public class Main {
     private final ProcessBuilder processBuilder;
 
     SimpleServerFactory(final Path directory, final String javaHome, final String... commands) {
-      if (!javaHome.isEmpty()) {
-        final var commandName =
-            System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
-        commands[0] =
-            Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
-      }
-      System.out.println("Running " + commands[0] + " in " + directory);
-      processBuilder = new ProcessBuilder(commands).directory(directory.toFile());
-      if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
+      this.processBuilder = getBuilder(directory, javaHome, commands);
     }
 
     @Override
@@ -453,6 +472,47 @@ public class Main {
         throw new IllegalStateException(e);
       }
     }
+  }
+
+  private static class ClientServerFactory implements BuildServerFactory {
+    private final BuildServerFactory buildServerFactory;
+    private final BuildServerFactory clientServerFactory;
+    private final Supplier<Boolean> serverUpCheck;
+
+    ClientServerFactory(
+        final BuildServerFactory buildServerFactory,
+        final Supplier<Boolean> serverUpCheck,
+        final Path directory,
+        final String javaHome,
+        final String... commands) {
+      this.buildServerFactory = buildServerFactory;
+      this.clientServerFactory = new SimpleServerFactory(directory, javaHome, commands);
+      this.serverUpCheck = serverUpCheck;
+    }
+
+    @Override
+    public TimeoutAutoCloseable newServer() {
+      final var server = buildServerFactory.newServer();
+      if (!serverUpCheck.get()) throw new IllegalStateException("Server did not respond");
+      final var client = clientServerFactory.newServer();
+      return () -> {
+        client.close();
+        server.close();
+      };
+    }
+  }
+
+  private static ProcessBuilder getBuilder(
+      final Path directory, final String javaHome, final String... commands) {
+    if (!javaHome.isEmpty() && commands[0].equals("java")) {
+      final var commandName =
+          System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
+      commands[0] = Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
+    }
+    System.out.println("Running " + commands[0] + " in " + directory);
+    final var processBuilder = new ProcessBuilder(commands).directory(directory.toFile());
+    if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
+    return processBuilder;
   }
 
   private static class Project {
@@ -684,6 +744,73 @@ public class Main {
           };
       Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
+  }
+
+  private static class ProcessIOThread extends Thread {
+    private final Process process;
+
+    ProcessIOThread(final Process process) {
+      super("process-io-thread-" + process.pid());
+      this.process = process;
+      setDaemon(true);
+      start();
+    }
+
+    @Override
+    public void run() {
+      // Reads the input and error streams of a process and dumps them to
+      // the main process output streams
+      final InputStream is = process.getInputStream();
+      final InputStream es = process.getErrorStream();
+      try {
+        while (true) {
+          {
+            final StringBuilder builder = new StringBuilder();
+            while (is.available() > 0) {
+              builder.append((char) is.read());
+            }
+            if (builder.length() > 0) {
+              System.out.print(builder.toString());
+            }
+          }
+          {
+            final StringBuilder builder = new StringBuilder();
+            while (es.available() > 0) {
+              builder.append((char) es.read());
+            }
+            if (builder.length() > 0) {
+              System.err.print(builder.toString());
+            }
+          }
+          Thread.sleep(2);
+        }
+      } catch (final IOException | InterruptedException e) {
+        // exit on interrupt
+      }
+    }
+  }
+
+  private static void installBloop(final Path dir, final String javaHome) throws IOException {
+    runProc(
+        "python", dir.resolve("install.py").toString(), "--dest", dir.resolve("dist").toString());
+    final var sbtLaunchJar = dir.resolve("bin").resolve("sbt-launch.jar").toString();
+    final var builder = getBuilder(dir, javaHome, "java", "-jar", sbtLaunchJar, "bloopInstall");
+    runProc(5, TimeUnit.MINUTES, false, builder);
+  }
+
+  private static Supplier<Boolean> bloopUpCheck(final Path dir) {
+    final var binary = dir.resolve("dist").resolve("bloop").toString();
+    return () -> {
+      var up = false;
+      while (!up) {
+        try {
+          up = runProc(100, TimeUnit.MILLISECONDS, true, "python", binary, "about");
+          Thread.sleep(100);
+        } catch (final IOException | InterruptedException e) {
+        }
+      }
+      return true;
+    };
   }
 
   private static long getModifiedTimeOrZero(final Path path) {
