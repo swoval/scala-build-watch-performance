@@ -38,12 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
-  private static boolean isWin = System.getProperty("os.name", "").toLowerCase().startsWith("win");
   private static final Random random = new Random();
-
-  private static Path srcDirectory(final String config) {
-    return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
-  }
 
   static {
     allProjects = new LinkedHashSet<>();
@@ -146,18 +141,18 @@ public class Main {
         final var projectBase = base.resolve(projectName);
         setupProject(projectName, base);
         final Project project;
+        final ProjectLayout layout;
         if (projectName.startsWith("sbt")) {
-          var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
-          project =
-              new Project(
-                  projectName, projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
+          final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
+          layout = new ProjectLayout(projectBase, projectBase);
+          project = new Project(projectName, layout, javaHome, "java", "-jar", binary, "~test");
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
+          layout = new ProjectLayout(projectBase, projectBase.resolve("perf"));
           project =
               new Project(
                   projectName,
-                  projectBase,
-                  projectBase.resolve("perf"),
+                  layout,
                   javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
@@ -172,11 +167,11 @@ public class Main {
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
+          layout = new ProjectLayout(projectBase, projectBase);
           project =
               new Project(
                   projectName,
-                  projectBase,
-                  projectBase,
+                  layout,
                   javaHome,
                   "java",
                   "-Xmx64m",
@@ -191,17 +186,16 @@ public class Main {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
         try (final var watcher = PathWatchers.get(true)) {
-          watcher.register(project.baseDirectory, 0);
+          watcher.register(layout.getBaseDirectory(), 0);
           results.add(run(project, 0, timeout, iterations, warmupIterations, watcher));
-          project.genSources(extraSources);
+          genSources(layout, extraSources);
           System.out.println("generated " + extraSources + " sources");
           results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
         } finally {
           project.close();
         }
       }
-      Collections.sort(
-          results,
+      results.sort(
           (left, right) ->
               left.count == right.count
                   ? left.name.compareTo(right.name)
@@ -374,11 +368,56 @@ public class Main {
     }
   }
 
-  private static class Project implements AutoCloseable {
+  private static class ProjectLayout {
     private final Path baseDirectory;
-    private final Path projectBaseDirectory;
-    private final Path watchPath;
-    private final Path mainSrcDirectory;
+    private final Path mainSourceDirectory;
+    private final Path testSourceDirectory;
+
+    ProjectLayout(final Path baseDirectory, final Path projectBaseDirectory) {
+      this.baseDirectory = baseDirectory;
+      this.mainSourceDirectory = srcDirectory(projectBaseDirectory, "main");
+      this.testSourceDirectory = srcDirectory(projectBaseDirectory, "test");
+    }
+
+    Path getMainSourceDirectory() {
+      return mainSourceDirectory;
+    }
+
+    Path getTestSourceDirectory() {
+      return testSourceDirectory;
+    }
+
+    Path getBaseDirectory() {
+      return baseDirectory;
+    }
+
+    Path getOutputPathSourceFile() {
+      return getMainSourceDirectory().resolve("WatchFile.scala");
+    }
+
+    private static Path srcDirectory(final Path base, final String config) {
+      return base.resolve("src")
+          .resolve(config)
+          .resolve("scala")
+          .resolve("sbt")
+          .resolve("benchmark");
+    }
+  }
+  private static void genSources(final ProjectLayout layout, final int count) throws IOException {
+    final Path src =
+        Files.createDirectories(layout.getMainSourceDirectory().resolve("blah"));
+    for (int i = 1; i <= count; ++i) {
+      Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
+    }
+  }
+
+  private interface BuildServer {
+    UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
+        throws IOException;
+  }
+
+  private static class Project implements AutoCloseable {
+    private final ProjectLayout projectLayout;
     private final ProcessBuilder builder;
     private final String name;
     private ForkProcess forkProcess;
@@ -386,7 +425,8 @@ public class Main {
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
         throws IOException {
       final long rand = random.nextLong();
-      final var newPath = baseDirectory.resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
+      final var newPath =
+          projectLayout.getBaseDirectory().resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
       System.out.println("Waiting for " + newPath);
       final var latch = new CountDownLatch(1);
       watcher.addObserver(
@@ -410,7 +450,11 @@ public class Main {
           });
       final var pathString = newPath.toString().replaceAll("\\\\", "\\\\\\\\");
       final var blahString =
-          mainSrcDirectory.resolve("blah").toString().replaceAll("\\\\", "\\\\\\\\");
+          projectLayout
+              .getMainSourceDirectory()
+              .resolve("blah")
+              .toString()
+              .replaceAll("\\\\", "\\\\\\\\");
       final String content =
           "package sbt.benchmark\n\n"
               + "import java.nio.file.Paths\n"
@@ -418,29 +462,29 @@ public class Main {
               + ("  val path = java.nio.file.Paths.get(\"" + pathString + "\")\n")
               + ("  val blahPath = java.nio.file.Paths.get(\"" + blahString + "\")\n")
               + "}";
-      Files.writeString(watchPath, content);
-      return new UpdateResult(latch, newPath, getModifiedTimeOrZero(watchPath));
+      final var outputPath = projectLayout.getOutputPathSourceFile();
+      Files.writeString(outputPath, content);
+      return new UpdateResult(latch, newPath, getModifiedTimeOrZero(outputPath));
     }
 
     Project(
         final String name,
-        final Path baseDirectory,
-        final Path projectBaseDirectory,
+        final ProjectLayout projectLayout,
         final String javaHome,
         final String... commands)
         throws IOException, URISyntaxException {
       this.name = name;
-      this.baseDirectory = baseDirectory;
-      this.mainSrcDirectory =
-          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
-      this.watchPath = mainSrcDirectory.resolve("WatchFile.scala");
-      final var akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
-      this.projectBaseDirectory = projectBaseDirectory;
+      this.projectLayout = projectLayout;
+      final var baseDirectory = projectLayout.getBaseDirectory();
+
+      Files.createDirectories(projectLayout.getMainSourceDirectory());
+      final var akkaMainPath = projectLayout.getMainSourceDirectory().resolve("AkkaMain.scala");
       Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
-      final var testSrcDirectory =
-          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("test")));
-      Files.writeString(
-          testSrcDirectory.resolve("AkkaPerfTest.scala"), loadSourceFile("AkkaPerfTest.scala"));
+
+      Files.createDirectories(projectLayout.getTestSourceDirectory());
+      final var akkaTestPath = projectLayout.getTestSourceDirectory().resolve("AkkaPerfTest.scala");
+      Files.writeString(akkaTestPath, loadSourceFile("AkkaPerfTest.scala"));
+
       if (!javaHome.isEmpty()) {
         final var commandName =
             System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
@@ -450,14 +494,6 @@ public class Main {
       System.out.println("Running " + commands[0] + " in " + baseDirectory);
       builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
       if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
-    }
-
-    void genSources(int count) throws IOException {
-      final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
-      Files.createDirectories(src);
-      for (int i = 1; i <= count; ++i) {
-        Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
-      }
     }
 
     void start() throws IOException {
