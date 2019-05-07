@@ -145,14 +145,15 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           layout = new ProjectLayout(projectBase, projectBase);
-          project = new Project(projectName, layout, javaHome, "java", "-jar", binary, "~test");
+          final var factory =
+              new SimpleServerFactory(projectBase, javaHome, "java", "-jar", binary, "~test");
+          project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           layout = new ProjectLayout(projectBase, projectBase.resolve("perf"));
-          project =
-              new Project(
-                  projectName,
-                  layout,
+          final var factory =
+              new SimpleServerFactory(
+                  projectBase,
                   javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
@@ -164,14 +165,14 @@ public class Main {
                   "-i",
                   "-w",
                   "perf.test");
+          project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
           layout = new ProjectLayout(projectBase, projectBase);
-          project =
-              new Project(
-                  projectName,
-                  layout,
+          final var factory =
+              new SimpleServerFactory(
+                  projectBase,
                   javaHome,
                   "java",
                   "-Xmx64m",
@@ -182,6 +183,7 @@ public class Main {
                   "org.gradle.launcher.GradleMain",
                   "-t",
                   "spec");
+          project = new Project(projectName, layout, factory);
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
@@ -191,8 +193,6 @@ public class Main {
           genSources(layout, extraSources);
           System.out.println("generated " + extraSources + " sources");
           results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
-        } finally {
-          project.close();
         }
       }
       results.sort(
@@ -239,6 +239,7 @@ public class Main {
     }
   }
 
+  @SuppressWarnings("unused")
   private static RunResult run(
       final Project project,
       final int count,
@@ -249,8 +250,7 @@ public class Main {
       throws TimeoutException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
-    try {
-      project.start();
+    try (final var server = project.buildServerFactory.newServer()) {
       long totalElapsed = 0;
       {
         System.out.println("Waiting for startup");
@@ -279,7 +279,6 @@ public class Main {
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
-      project.close();
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
     }
@@ -287,7 +286,7 @@ public class Main {
     return new RunResult(project.name, count, result, (end - start) / 1000000);
   }
 
-  private static class ForkProcess implements AutoCloseable {
+  private static class ForkProcess implements TimeoutAutoCloseable {
     final Process process;
     final Thread thread;
     final AtomicBoolean isClosed = new AtomicBoolean(false);
@@ -403,24 +402,63 @@ public class Main {
           .resolve("benchmark");
     }
   }
+
+  private static void initProject(final ProjectLayout projectLayout)
+      throws IOException, URISyntaxException {
+    Files.createDirectories(projectLayout.getMainSourceDirectory());
+    final var akkaMainPath = projectLayout.getMainSourceDirectory().resolve("AkkaMain.scala");
+    Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
+
+    Files.createDirectories(projectLayout.getTestSourceDirectory());
+    final var akkaTestPath = projectLayout.getTestSourceDirectory().resolve("AkkaPerfTest.scala");
+    Files.writeString(akkaTestPath, loadSourceFile("AkkaPerfTest.scala"));
+  }
+
   private static void genSources(final ProjectLayout layout, final int count) throws IOException {
-    final Path src =
-        Files.createDirectories(layout.getMainSourceDirectory().resolve("blah"));
+    final Path src = Files.createDirectories(layout.getMainSourceDirectory().resolve("blah"));
     for (int i = 1; i <= count; ++i) {
       Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
     }
   }
 
-  private interface BuildServer {
-    UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
-        throws IOException;
+  private interface BuildServerFactory {
+    TimeoutAutoCloseable newServer();
   }
 
-  private static class Project implements AutoCloseable {
+  private interface TimeoutAutoCloseable extends AutoCloseable {
+    @Override
+    void close() throws TimeoutException;
+  }
+
+  private static class SimpleServerFactory implements BuildServerFactory {
+    private final ProcessBuilder processBuilder;
+
+    SimpleServerFactory(final Path directory, final String javaHome, final String... commands) {
+      if (!javaHome.isEmpty()) {
+        final var commandName =
+            System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
+        commands[0] =
+            Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
+      }
+      System.out.println("Running " + commands[0] + " in " + directory);
+      processBuilder = new ProcessBuilder(commands).directory(directory.toFile());
+      if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
+    }
+
+    @Override
+    public TimeoutAutoCloseable newServer() {
+      try {
+        return new ForkProcess(processBuilder.start());
+      } catch (final IOException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+
+  private static class Project {
     private final ProjectLayout projectLayout;
-    private final ProcessBuilder builder;
+    private final BuildServerFactory buildServerFactory;
     private final String name;
-    private ForkProcess forkProcess;
 
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
         throws IOException {
@@ -470,42 +508,12 @@ public class Main {
     Project(
         final String name,
         final ProjectLayout projectLayout,
-        final String javaHome,
-        final String... commands)
+        final BuildServerFactory buildServerFactory)
         throws IOException, URISyntaxException {
       this.name = name;
       this.projectLayout = projectLayout;
-      final var baseDirectory = projectLayout.getBaseDirectory();
-
-      Files.createDirectories(projectLayout.getMainSourceDirectory());
-      final var akkaMainPath = projectLayout.getMainSourceDirectory().resolve("AkkaMain.scala");
-      Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
-
-      Files.createDirectories(projectLayout.getTestSourceDirectory());
-      final var akkaTestPath = projectLayout.getTestSourceDirectory().resolve("AkkaPerfTest.scala");
-      Files.writeString(akkaTestPath, loadSourceFile("AkkaPerfTest.scala"));
-
-      if (!javaHome.isEmpty()) {
-        final var commandName =
-            System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
-        commands[0] =
-            Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
-      }
-      System.out.println("Running " + commands[0] + " in " + baseDirectory);
-      builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
-      if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
-    }
-
-    void start() throws IOException {
-      if (forkProcess == null) forkProcess = new ForkProcess(builder.start());
-    }
-
-    @Override
-    public void close() {
-      if (forkProcess != null) {
-        forkProcess.close();
-        forkProcess = null;
-      }
+      this.buildServerFactory = buildServerFactory;
+      initProject(projectLayout);
     }
   }
 
