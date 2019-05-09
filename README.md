@@ -30,22 +30,17 @@ sbt-0.13.17 (5003 source files) | 2571 | 3667 | 2840 | 88025
 
 ### mac
 project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-bloop-1.2.5 (3 source files) | 4199 | 4636 | 4298 | 81494
-gradle-5.4.1 (3 source files) | 2195 | 2457 | 2305 | 46825
-mill-0.3.6 (3 source files) | 3398 | 4074 | 3672 | 89003
-sbt-0.13.17 (3 source files) | 1225 | 1583 | 1339 | 37880
-sbt-1.3.0 (3 source files) | 285 | 426 | 339 | 28756
-bloop-1.2.5 (5003 source files) | 5137 | 5836 | 5378 | 113274
-gradle-5.4.1 (5003 source files) | 4239 | 4436 | 4359 | 91124
-mill-0.3.6 (5003 source files) | 5883 | 7248 | 6375 | 134368
-sbt-0.13.17 (5003 source files) | 3275 | 3979 | 3594 | 91920
-sbt-1.3.0 (5003 source files) | 1251 | 1526 | 1396 | 56389
-
-Note that gradle performs very poorly because it uses the built in jvm
-[WatchService](https://docs.oracle.com/javase/8/docs/api/java/nio/file/WatchService.html)
-to monitor file. On osx, the defualt `WatchService` is a slow polling implementation.
-
+:------- | :------: | :------: | :-------: | :--------:
+bloop-1.2.5 (3 source files) | 4232 | 4467 | 4311 | 80204
+gradle-5.4.1 (3 source files) | 2181 | 2347 | 2277 | 46967
+mill-0.3.6 (3 source files) | 3287 | 3489 | 3397 | 84559
+sbt-0.13.17 (3 source files) | 1184 | 1362 | 1277 | 35507
+sbt-1.3.0 (3 source files) | 274 | 391 | 328 | 25058
+bloop-1.2.5 (5003 source files) | 5223 | 6133 | 5419 | 116007
+gradle-5.4.1 (5003 source files) | 4225 | 4413 | 4324 | 92826
+mill-0.3.6 (5003 source files) | 5856 | 6150 | 5964 | 121911
+sbt-0.13.17 (5003 source files) | 3023 | 3647 | 3223 | 79273
+sbt-1.3.0 (5003 source files) | 1051 | 1234 | 1140 | 50327
 
 ### windows
 project | min (ms) | max (ms) | mean (ms) | total (ms)
