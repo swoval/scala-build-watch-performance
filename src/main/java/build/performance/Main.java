@@ -512,6 +512,7 @@ public class Main {
     }
     System.out.println("Running " + commands[0] + " in " + directory);
     final var processBuilder = new ProcessBuilder(commands).directory(directory.toFile());
+    processBuilder.environment().remove("SBT_OPTS");
     if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
     return processBuilder;
   }
