@@ -424,8 +424,9 @@ public class Main {
     private final long lastModifiedTime;
     private final Path watchPath;
 
-    final long elapsed() {
-      return getModifiedTimeOrZero(watchPath) - lastModifiedTime;
+    final long elapsed() throws IOException {
+      var written = Long.valueOf(Files.readString(watchPath).lines().skip(1).iterator().next());
+      return written - lastModifiedTime;
     }
 
     UpdateResult(final CountDownLatch latch, final Path watchPath, final long lastModifiedTime) {
@@ -589,7 +590,8 @@ public class Main {
               if (event.getTypedPath().getPath().equals(newPath)) {
                 try {
                   if (event.getTypedPath().isFile()
-                      && Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
+                      && Integer.valueOf(Files.readString(newPath).lines().iterator().next())
+                          == count) latch.countDown();
                 } catch (final NumberFormatException e) {
                   // ignore this, it means the file doesn't exist
                 } catch (final Exception e) {
@@ -614,7 +616,7 @@ public class Main {
               + "}";
       final var outputPath = projectLayout.getOutputPathSourceFile();
       Files.writeString(outputPath, content);
-      return new UpdateResult(latch, newPath, getModifiedTimeOrZero(outputPath));
+      return new UpdateResult(latch, newPath, System.currentTimeMillis());
     }
 
     Project(
