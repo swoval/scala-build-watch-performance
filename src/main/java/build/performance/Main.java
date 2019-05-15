@@ -28,6 +28,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -254,6 +255,9 @@ public class Main {
                   warmupIterations,
                   cpuTimeout,
                   watcher));
+        } catch (final Exception e) {
+          System.err.println("Error running tests for " + project.name);
+          e.printStackTrace();
         }
       }
       results.sort(
@@ -592,7 +596,7 @@ public class Main {
                   if (event.getTypedPath().isFile()
                       && Integer.valueOf(Files.readString(newPath).lines().iterator().next())
                           == count) latch.countDown();
-                } catch (final NumberFormatException e) {
+                } catch (final NumberFormatException | NoSuchElementException e) {
                   // ignore this, it means the file doesn't exist
                 } catch (final Exception e) {
                   e.printStackTrace();
@@ -887,7 +891,7 @@ public class Main {
     final var p = Integer.toString(pid);
     if (isMac) {
       final var proc =
-          new ProcessBuilder("top", "-pid", p, "-d", "-s", s, "-l", "4", "-stats", "cpu").start();
+          new ProcessBuilder("top", "-pid", p, "-d", "-s", s, "-l", "2", "-stats", "cpu").start();
       assert (proc.waitFor() == 0);
       // For some reason the process builder doesn't wait for top to actually complete, but
       // reading from the input stream blocks until top is over.
@@ -907,7 +911,7 @@ public class Main {
     } else if (isWin) {
       return 0.0;
     } else {
-      final var proc = new ProcessBuilder("top", "-p", p, "-b", "-d", s, "-n", "4").start();
+      final var proc = new ProcessBuilder("top", "-p", p, "-b", "-d", s, "-n", "2").start();
       assert (proc.waitFor() == 0);
       // For some reason the process builder doesn't wait for top to actually complete, but
       // reading from the input stream blocks until top is over.
