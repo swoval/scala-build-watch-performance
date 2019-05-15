@@ -34,12 +34,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
   private static final Random random = new Random();
+  private static final boolean isMac;
+  private static final boolean isWin;
+
+  static {
+    var osName = System.getProperty("os.name", "").toLowerCase();
+    isMac = osName.startsWith("mac");
+    isWin = osName.startsWith("win");
+  }
 
   static {
     allProjects = new LinkedHashSet<>();
@@ -69,6 +78,7 @@ public class Main {
     var baseDirectory = Optional.<Path>empty();
     var extraSources = 5000;
     var timeout = 10;
+    var cpuTimeout = 5;
     String javaHome = "";
 
     var sourceDirectory = Optional.<Path>empty();
@@ -78,6 +88,10 @@ public class Main {
         switch (prev) {
           case 'b':
             baseDirectory = Optional.of(Paths.get(arg));
+            prev = '\0';
+            break;
+          case 'c':
+            cpuTimeout = Integer.valueOf(arg);
             prev = '\0';
             break;
           case 'j':
@@ -113,6 +127,8 @@ public class Main {
               prev = 's';
             } else if (arg.equals("-j") || arg.equals("--java-home")) {
               prev = 'j';
+            } else if (arg.equals("-c") || arg.equals("--cpu-timeout-seconds")) {
+              prev = 'c';
             } else if (arg.equals("-t") || arg.equals("--timeout-minutes")) {
               prev = 't';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
@@ -226,10 +242,18 @@ public class Main {
         }
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(layout.getBaseDirectory(), 0);
-          results.add(run(project, 0, timeout, iterations, warmupIterations, watcher));
+          results.add(run(project, 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
           genSources(layout, extraSources);
           System.out.println("generated " + extraSources + " sources");
-          results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
+          results.add(
+              run(
+                  project,
+                  extraSources,
+                  timeout,
+                  iterations,
+                  warmupIterations,
+                  cpuTimeout,
+                  watcher));
         }
       }
       results.sort(
@@ -237,8 +261,8 @@ public class Main {
               left.count == right.count
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
-      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
-      System.out.println(":------- | :------: | :------: | :-------: | :--------: ");
+      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |");
+      System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
         System.out.println(result.markdownRow());
       }
@@ -279,12 +303,19 @@ public class Main {
     private final int count;
     private final String name;
     private final long totalMs;
+    private final double cpuUtilization;
 
-    RunResult(final String name, final int count, final long[] results, final long totalMs) {
+    RunResult(
+        final String name,
+        final int count,
+        final long[] results,
+        final long totalMs,
+        final double cpuUtilization) {
       this.count = count;
       this.name = name;
       this.results = results;
       this.totalMs = totalMs;
+      this.cpuUtilization = cpuUtilization;
     }
 
     String markdownRow() {
@@ -299,7 +330,7 @@ public class Main {
       avg /= results.length;
       return this.name
           + (" (" + (count + 3) + " source files) | ")
-          + (min + " | " + max + " | " + avg + " | " + totalMs);
+          + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
     }
   }
 
@@ -310,6 +341,7 @@ public class Main {
       final int timeoutMinutes,
       final int iterations,
       final int warmupIterations,
+      final int cpuTimeout,
       final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
     final var result = new long[iterations];
@@ -345,11 +377,14 @@ public class Main {
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
+      final var end = System.nanoTime();
+      final double cpu = getProcessCpuUtilization(server.pid(), cpuTimeout);
+      System.out.println(cpu);
+      return new RunResult(project.name, count, result, (end - start) / 1000000, cpu);
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
+      throw new RuntimeException(e);
     }
-    final var end = System.nanoTime();
-    return new RunResult(project.name, count, result, (end - start) / 1000000);
   }
 
   private static class ForkProcess implements TimeoutAutoCloseable {
@@ -361,6 +396,11 @@ public class Main {
       System.out.println("Managing process with pid " + process.pid());
       this.process = process;
       thread = new ProcessIOThread(process);
+    }
+
+    @Override
+    public int pid() {
+      return (int) process.pid();
     }
 
     @Override
@@ -454,6 +494,8 @@ public class Main {
   }
 
   private interface TimeoutAutoCloseable extends AutoCloseable {
+    int pid();
+
     @Override
     void close() throws TimeoutException;
   }
@@ -496,9 +538,17 @@ public class Main {
       final var server = buildServerFactory.newServer();
       if (!serverUpCheck.get()) throw new IllegalStateException("Server did not respond");
       final var client = clientServerFactory.newServer();
-      return () -> {
-        client.close();
-        server.close();
+      return new TimeoutAutoCloseable() {
+        @Override
+        public int pid() {
+          return server.pid();
+        }
+
+        @Override
+        public void close() throws TimeoutException {
+          client.close();
+          server.close();
+        }
       };
     }
   }
@@ -750,12 +800,18 @@ public class Main {
 
   private static class ProcessIOThread extends Thread {
     private final Process process;
+    private final Consumer<String> consumer;
 
-    ProcessIOThread(final Process process) {
+    ProcessIOThread(final Process process, final Consumer<String> consumer) {
       super("process-io-thread-" + process.pid());
       this.process = process;
+      this.consumer = consumer;
       setDaemon(true);
       start();
+    }
+
+    ProcessIOThread(final Process process) {
+      this(process, System.err::print);
     }
 
     @Override
@@ -772,7 +828,7 @@ public class Main {
               builder.append((char) is.read());
             }
             if (builder.length() > 0) {
-              System.out.print(builder.toString());
+              consumer.accept(builder.toString());
             }
           }
           {
@@ -781,7 +837,7 @@ public class Main {
               builder.append((char) es.read());
             }
             if (builder.length() > 0) {
-              System.err.print(builder.toString());
+              consumer.accept(builder.toString());
             }
           }
           Thread.sleep(2);
@@ -820,6 +876,52 @@ public class Main {
       return Files.getLastModifiedTime(path).toMillis();
     } catch (final IOException e) {
       return 0;
+    }
+  }
+
+  private static double getProcessCpuUtilization(final int pid, final int delaySeconds)
+      throws IOException, InterruptedException {
+    final var s = Integer.toString(delaySeconds);
+    final var p = Integer.toString(pid);
+    if (isMac) {
+      final var proc =
+          new ProcessBuilder("top", "-pid", p, "-d", "-s", s, "-l", "4", "-stats", "cpu").start();
+      assert (proc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var result = new String(proc.getInputStream().readAllBytes());
+      final var it = result.lines().iterator();
+      while (it.hasNext()) {
+        final var cpu = it.next();
+        if (!it.hasNext()) {
+          try {
+            return Double.valueOf(cpu);
+          } catch (final NumberFormatException e) {
+            return -1;
+          }
+        }
+      }
+      return 0.0;
+    } else if (isWin) {
+      return 0.0;
+    } else {
+      final var proc = new ProcessBuilder("top", "-p", p, "-b", "-d", s, "-n", "4").start();
+      assert (proc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var result = new String(proc.getInputStream().readAllBytes());
+      final var it = result.lines().iterator();
+      while (it.hasNext()) {
+        final var cpuLine = it.next();
+        if (!it.hasNext()) {
+          try {
+            return Double.valueOf(cpuLine.split("[ ]+")[9]);
+          } catch (final NumberFormatException e) {
+            return -1;
+          }
+        }
+      }
+      return 0.0;
     }
   }
 }
