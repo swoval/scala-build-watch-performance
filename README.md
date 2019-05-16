@@ -13,7 +13,7 @@ file and the test output file to determine the end to end latency between
 modifying the source file and the test completing.
 
 The test also checks the cpu utilization of the continuous build while waiting
-for updates. After the tests completes, the tool calculates the average cpu
+for updates. After the tests complete, the tool calculates the average cpu
 utilization of the forked build tool process for five seconds and reports the
 results.
 
