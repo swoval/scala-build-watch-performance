@@ -15,7 +15,7 @@ object AkkaMain {
       catch {
         case e: IOException => 0
       }
-    Files.write(WatchFile.path, count.toString.getBytes);
+    Files.write(WatchFile.path, (count.toString + s"\n${System.currentTimeMillis}").getBytes);
   }
 }
 

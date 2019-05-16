@@ -28,21 +28,27 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class Main {
   private static Set<String> allProjects;
   private static final FileSystem jarFileSystem;
-  private static boolean isWin = System.getProperty("os.name", "").toLowerCase().startsWith("win");
   private static final Random random = new Random();
+  private static final boolean isMac;
+  private static final boolean isWin;
 
-  private static Path srcDirectory(final String config) {
-    return Paths.get("src").resolve(config).resolve("scala").resolve("sbt").resolve("benchmark");
+  static {
+    var osName = System.getProperty("os.name", "").toLowerCase();
+    isMac = osName.startsWith("mac");
+    isWin = osName.startsWith("win");
   }
 
   static {
@@ -51,6 +57,7 @@ public class Main {
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
+    allProjects.add("bloop-1.2.5");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -72,6 +79,7 @@ public class Main {
     var baseDirectory = Optional.<Path>empty();
     var extraSources = 5000;
     var timeout = 10;
+    var cpuTimeout = 5;
     String javaHome = "";
 
     var sourceDirectory = Optional.<Path>empty();
@@ -81,6 +89,10 @@ public class Main {
         switch (prev) {
           case 'b':
             baseDirectory = Optional.of(Paths.get(arg));
+            prev = '\0';
+            break;
+          case 'c':
+            cpuTimeout = Integer.valueOf(arg);
             prev = '\0';
             break;
           case 'j':
@@ -116,6 +128,8 @@ public class Main {
               prev = 's';
             } else if (arg.equals("-j") || arg.equals("--java-home")) {
               prev = 'j';
+            } else if (arg.equals("-c") || arg.equals("--cpu-timeout-seconds")) {
+              prev = 'c';
             } else if (arg.equals("-t") || arg.equals("--timeout-minutes")) {
               prev = 't';
             } else if (arg.equals("-i") || arg.equals("--iterations")) {
@@ -146,18 +160,21 @@ public class Main {
         final var projectBase = base.resolve(projectName);
         setupProject(projectName, base);
         final Project project;
+        final ProjectLayout layout;
         if (projectName.startsWith("sbt")) {
-          var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
-          project =
-              new Project(
-                  projectName, projectBase, projectBase, javaHome, "java", "-jar", binary, "~test");
+          final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
+          layout = new ProjectLayout(projectBase, projectBase);
+          final var color = isWin ? "false" : "true";
+          final var factory =
+              new SimpleServerFactory(
+                  projectBase, javaHome, "java", "-Dsbt.color=" + color, "-jar", binary, "~test");
+          project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
-          project =
-              new Project(
-                  projectName,
+          layout = new ProjectLayout(projectBase, projectBase.resolve("perf"));
+          final var factory =
+              new SimpleServerFactory(
                   projectBase,
-                  projectBase.resolve("perf"),
                   javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
@@ -169,13 +186,13 @@ public class Main {
                   "-i",
                   "-w",
                   "perf.test");
+          project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
-          project =
-              new Project(
-                  projectName,
-                  projectBase,
+          layout = new ProjectLayout(projectBase, projectBase);
+          final var factory =
+              new SimpleServerFactory(
                   projectBase,
                   javaHome,
                   "java",
@@ -187,27 +204,70 @@ public class Main {
                   "org.gradle.launcher.GradleMain",
                   "-t",
                   "spec");
+          project = new Project(projectName, layout, factory);
+        } else if (projectName.startsWith("bloop")) {
+          installBloop(projectBase, javaHome);
+          final var bloopJar = projectBase.resolve("dist").resolve("blp-coursier").toString();
+          layout = new ProjectLayout(projectBase, projectBase);
+          final var serverFactory =
+              new SimpleServerFactory(
+                  projectBase,
+                  javaHome,
+                  "java",
+                  "-jar",
+                  bloopJar,
+                  "launch",
+                  "ch.epfl.scala:bloop-frontend_2.12:1.2.5",
+                  "-r",
+                  "bintray:scalameta/maven",
+                  "-r",
+                  "bintray:scalacenter/releases",
+                  "-r",
+                  "https://oss.sonatype.org/content/repository/staging",
+                  "--main",
+                  "bloop.Server");
+          final var bloopBin = projectBase.resolve("dist").resolve("bloop").toString();
+          final var factory =
+              new ClientServerFactory(
+                  serverFactory,
+                  bloopUpCheck(projectBase),
+                  projectBase,
+                  javaHome,
+                  "python",
+                  bloopBin,
+                  "test",
+                  "bloop-1-2-5",
+                  "-w");
+          project = new Project(projectName, layout, factory);
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
         try (final var watcher = PathWatchers.get(true)) {
-          watcher.register(project.baseDirectory, 0);
-          results.add(run(project, 0, timeout, iterations, warmupIterations, watcher));
-          project.genSources(extraSources);
+          watcher.register(layout.getBaseDirectory(), 0);
+          results.add(run(project, 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          genSources(layout, extraSources);
           System.out.println("generated " + extraSources + " sources");
-          results.add(run(project, extraSources, timeout, iterations, warmupIterations, watcher));
-        } finally {
-          project.close();
+          results.add(
+              run(
+                  project,
+                  extraSources,
+                  timeout,
+                  iterations,
+                  warmupIterations,
+                  cpuTimeout,
+                  watcher));
+        } catch (final Exception e) {
+          System.err.println("Error running tests for " + project.name);
+          e.printStackTrace();
         }
       }
-      Collections.sort(
-          results,
+      results.sort(
           (left, right) ->
               left.count == right.count
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
-      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms)");
-      System.out.println(":------- | :------: | :------: | :------: | :------: ");
+      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |");
+      System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
         System.out.println(result.markdownRow());
       }
@@ -216,17 +276,51 @@ public class Main {
     }
   }
 
+  private static boolean runProc(final String... commands) throws IOException {
+    return runProc(30, TimeUnit.SECONDS, false, commands);
+  }
+
+  private static boolean runProc(
+      final long duration, final TimeUnit timeUnit, final boolean quiet, final String... commands)
+      throws IOException {
+    return runProc(duration, timeUnit, quiet, new ProcessBuilder(commands));
+  }
+
+  private static boolean runProc(
+      final long duration,
+      final TimeUnit timeUnit,
+      final boolean quiet,
+      final ProcessBuilder builder)
+      throws IOException {
+    final var process = builder.start();
+    var thread = quiet ? null : new ProcessIOThread(process);
+    try {
+      return process.waitFor(duration, timeUnit) && process.exitValue() == 0;
+    } catch (final InterruptedException e) {
+      return false;
+    } finally {
+      if (thread != null) thread.interrupt();
+    }
+  }
+
   private static final class RunResult {
     private final long[] results;
     private final int count;
     private final String name;
     private final long totalMs;
+    private final double cpuUtilization;
 
-    RunResult(final String name, final int count, final long[] results, final long totalMs) {
+    RunResult(
+        final String name,
+        final int count,
+        final long[] results,
+        final long totalMs,
+        final double cpuUtilization) {
       this.count = count;
       this.name = name;
       this.results = results;
       this.totalMs = totalMs;
+      this.cpuUtilization = cpuUtilization;
     }
 
     String markdownRow() {
@@ -241,22 +335,23 @@ public class Main {
       avg /= results.length;
       return this.name
           + (" (" + (count + 3) + " source files) | ")
-          + (min + " | " + max + " | " + avg + " | " + totalMs);
+          + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
     }
   }
 
+  @SuppressWarnings("unused")
   private static RunResult run(
       final Project project,
       final int count,
       final int timeoutMinutes,
       final int iterations,
       final int warmupIterations,
+      final int cpuTimeout,
       final PathWatcher<PathWatchers.Event> watcher)
       throws TimeoutException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
-    try {
-      project.start();
+    try (final var server = project.buildServerFactory.newServer()) {
       long totalElapsed = 0;
       {
         System.out.println("Waiting for startup");
@@ -265,6 +360,8 @@ public class Main {
           throw new TimeoutException("Failed to touch expected file");
         System.out.println("Waited for startup");
       }
+      // bloop takes a moment to start watching files
+      if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
@@ -285,60 +382,31 @@ public class Main {
       }
       long average = totalElapsed / iterations;
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
-      project.close();
+      final var end = System.nanoTime();
+      final double cpu = getProcessCpuUtilization(server.pid(), cpuTimeout);
+      System.out.println(
+          "Average cpu utilization percentage over " + cpuTimeout + " seconds was " + cpu);
+      return new RunResult(project.name, count, result, (end - start) / 1000000, cpu);
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
+      throw new RuntimeException(e);
     }
-    final var end = System.nanoTime();
-    return new RunResult(project.name, count, result, (end - start) / 1000000);
   }
 
-  private static class ForkProcess implements AutoCloseable {
+  private static class ForkProcess implements TimeoutAutoCloseable {
     final Process process;
     final Thread thread;
     final AtomicBoolean isClosed = new AtomicBoolean(false);
-    final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     ForkProcess(final Process process) {
       System.out.println("Managing process with pid " + process.pid());
       this.process = process;
-      thread =
-          new Thread("process-io-thread") {
-            @Override
-            public void run() {
-              // Reads the input and error streams of a process and dumps them to
-              // the main process output streams
-              final InputStream is = process.getInputStream();
-              final InputStream es = process.getErrorStream();
-              try {
-                while (!isShutdown.get()) {
-                  {
-                    final StringBuilder builder = new StringBuilder();
-                    while (is.available() > 0) {
-                      builder.append((char) is.read());
-                    }
-                    if (builder.length() > 0) {
-                      System.out.print(builder.toString());
-                    }
-                  }
-                  {
-                    final StringBuilder builder = new StringBuilder();
-                    while (es.available() > 0) {
-                      builder.append((char) es.read());
-                    }
-                    if (builder.length() > 0) {
-                      System.err.print(builder.toString());
-                    }
-                  }
-                  Thread.sleep(2);
-                }
-              } catch (final IOException | InterruptedException e) {
-                isShutdown.set(true);
-              }
-            }
-          };
-      thread.setDaemon(true);
-      thread.start();
+      thread = new ProcessIOThread(process);
+    }
+
+    @Override
+    public int pid() {
+      return (int) process.pid();
     }
 
     @Override
@@ -347,7 +415,6 @@ public class Main {
         try {
           process.destroy();
           process.waitFor(10, TimeUnit.SECONDS);
-          isShutdown.set(true);
           thread.interrupt();
           thread.join();
         } catch (final InterruptedException e) {
@@ -363,8 +430,9 @@ public class Main {
     private final long lastModifiedTime;
     private final Path watchPath;
 
-    final long elapsed() {
-      return getModifiedTimeOrZero(watchPath) - lastModifiedTime;
+    final long elapsed() throws IOException {
+      var written = Long.valueOf(Files.readString(watchPath).lines().skip(1).iterator().next());
+      return written - lastModifiedTime;
     }
 
     UpdateResult(final CountDownLatch latch, final Path watchPath, final long lastModifiedTime) {
@@ -374,19 +442,149 @@ public class Main {
     }
   }
 
-  private static class Project implements AutoCloseable {
+  private static class ProjectLayout {
     private final Path baseDirectory;
-    private final Path projectBaseDirectory;
-    private final Path watchPath;
-    private final Path mainSrcDirectory;
-    private final ProcessBuilder builder;
+    private final Path mainSourceDirectory;
+    private final Path testSourceDirectory;
+
+    ProjectLayout(final Path baseDirectory, final Path projectBaseDirectory) {
+      this.baseDirectory = baseDirectory;
+      this.mainSourceDirectory = srcDirectory(projectBaseDirectory, "main");
+      this.testSourceDirectory = srcDirectory(projectBaseDirectory, "test");
+    }
+
+    Path getMainSourceDirectory() {
+      return mainSourceDirectory;
+    }
+
+    Path getTestSourceDirectory() {
+      return testSourceDirectory;
+    }
+
+    Path getBaseDirectory() {
+      return baseDirectory;
+    }
+
+    Path getOutputPathSourceFile() {
+      return getMainSourceDirectory().resolve("WatchFile.scala");
+    }
+
+    private static Path srcDirectory(final Path base, final String config) {
+      return base.resolve("src")
+          .resolve(config)
+          .resolve("scala")
+          .resolve("sbt")
+          .resolve("benchmark");
+    }
+  }
+
+  private static void initProject(final ProjectLayout projectLayout)
+      throws IOException, URISyntaxException {
+    Files.createDirectories(projectLayout.getMainSourceDirectory());
+    final var akkaMainPath = projectLayout.getMainSourceDirectory().resolve("AkkaMain.scala");
+    Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
+
+    Files.createDirectories(projectLayout.getTestSourceDirectory());
+    final var akkaTestPath = projectLayout.getTestSourceDirectory().resolve("AkkaPerfTest.scala");
+    Files.writeString(akkaTestPath, loadSourceFile("AkkaPerfTest.scala"));
+  }
+
+  private static void genSources(final ProjectLayout layout, final int count) throws IOException {
+    final Path src = Files.createDirectories(layout.getMainSourceDirectory().resolve("blah"));
+    for (int i = 1; i <= count; ++i) {
+      Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
+    }
+  }
+
+  private interface BuildServerFactory {
+    TimeoutAutoCloseable newServer();
+  }
+
+  private interface TimeoutAutoCloseable extends AutoCloseable {
+    int pid();
+
+    @Override
+    void close() throws TimeoutException;
+  }
+
+  private static class SimpleServerFactory implements BuildServerFactory {
+    private final ProcessBuilder processBuilder;
+
+    SimpleServerFactory(final Path directory, final String javaHome, final String... commands) {
+      this.processBuilder = getBuilder(directory, javaHome, commands);
+    }
+
+    @Override
+    public TimeoutAutoCloseable newServer() {
+      try {
+        return new ForkProcess(processBuilder.start());
+      } catch (final IOException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+
+  private static class ClientServerFactory implements BuildServerFactory {
+    private final BuildServerFactory buildServerFactory;
+    private final BuildServerFactory clientServerFactory;
+    private final Supplier<Boolean> serverUpCheck;
+
+    ClientServerFactory(
+        final BuildServerFactory buildServerFactory,
+        final Supplier<Boolean> serverUpCheck,
+        final Path directory,
+        final String javaHome,
+        final String... commands) {
+      this.buildServerFactory = buildServerFactory;
+      this.clientServerFactory = new SimpleServerFactory(directory, javaHome, commands);
+      this.serverUpCheck = serverUpCheck;
+    }
+
+    @Override
+    public TimeoutAutoCloseable newServer() {
+      final var server = buildServerFactory.newServer();
+      if (!serverUpCheck.get()) throw new IllegalStateException("Server did not respond");
+      final var client = clientServerFactory.newServer();
+      return new TimeoutAutoCloseable() {
+        @Override
+        public int pid() {
+          return server.pid();
+        }
+
+        @Override
+        public void close() throws TimeoutException {
+          client.close();
+          server.close();
+        }
+      };
+    }
+  }
+
+  private static ProcessBuilder getBuilder(
+      final Path directory, final String javaHome, final String... commands) {
+    if (!javaHome.isEmpty() && commands[0].equals("java")) {
+      final var commandName =
+          System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
+      commands[0] = Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
+    }
+    System.out.println("Running " + commands[0] + " in " + directory);
+    final var processBuilder =
+        new ProcessBuilder(commands).inheritIO().directory(directory.toFile());
+    processBuilder.environment().remove("SBT_OPTS");
+    if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
+    return processBuilder;
+  }
+
+  private static class Project {
+    private final ProjectLayout projectLayout;
+    private final BuildServerFactory buildServerFactory;
     private final String name;
-    private ForkProcess forkProcess;
 
     UpdateResult updateAkkaMain(final PathWatcher<PathWatchers.Event> watcher, final int count)
         throws IOException {
       final long rand = random.nextLong();
-      final var newPath = baseDirectory.resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
+      final var newPath =
+          projectLayout.getBaseDirectory().resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
       System.out.println("Waiting for " + newPath);
       final var latch = new CountDownLatch(1);
       watcher.addObserver(
@@ -399,8 +597,9 @@ public class Main {
               if (event.getTypedPath().getPath().equals(newPath)) {
                 try {
                   if (event.getTypedPath().isFile()
-                      && Integer.valueOf(Files.readString(newPath)) == count) latch.countDown();
-                } catch (final NumberFormatException e) {
+                      && Integer.valueOf(Files.readString(newPath).lines().iterator().next())
+                          == count) latch.countDown();
+                } catch (final NumberFormatException | NoSuchElementException e) {
                   // ignore this, it means the file doesn't exist
                 } catch (final Exception e) {
                   e.printStackTrace();
@@ -410,7 +609,11 @@ public class Main {
           });
       final var pathString = newPath.toString().replaceAll("\\\\", "\\\\\\\\");
       final var blahString =
-          mainSrcDirectory.resolve("blah").toString().replaceAll("\\\\", "\\\\\\\\");
+          projectLayout
+              .getMainSourceDirectory()
+              .resolve("blah")
+              .toString()
+              .replaceAll("\\\\", "\\\\\\\\");
       final String content =
           "package sbt.benchmark\n\n"
               + "import java.nio.file.Paths\n"
@@ -418,58 +621,20 @@ public class Main {
               + ("  val path = java.nio.file.Paths.get(\"" + pathString + "\")\n")
               + ("  val blahPath = java.nio.file.Paths.get(\"" + blahString + "\")\n")
               + "}";
-      Files.writeString(watchPath, content);
-      return new UpdateResult(latch, newPath, getModifiedTimeOrZero(watchPath));
+      final var outputPath = projectLayout.getOutputPathSourceFile();
+      Files.writeString(outputPath, content);
+      return new UpdateResult(latch, newPath, System.currentTimeMillis());
     }
 
     Project(
         final String name,
-        final Path baseDirectory,
-        final Path projectBaseDirectory,
-        final String javaHome,
-        final String... commands)
+        final ProjectLayout projectLayout,
+        final BuildServerFactory buildServerFactory)
         throws IOException, URISyntaxException {
       this.name = name;
-      this.baseDirectory = baseDirectory;
-      this.mainSrcDirectory =
-          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("main")));
-      this.watchPath = mainSrcDirectory.resolve("WatchFile.scala");
-      final var akkaMainPath = mainSrcDirectory.resolve("AkkaMain.scala");
-      this.projectBaseDirectory = projectBaseDirectory;
-      Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
-      final var testSrcDirectory =
-          Files.createDirectories(projectBaseDirectory.resolve(srcDirectory("test")));
-      Files.writeString(
-          testSrcDirectory.resolve("AkkaPerfTest.scala"), loadSourceFile("AkkaPerfTest.scala"));
-      if (!javaHome.isEmpty()) {
-        final var commandName =
-            System.getProperty("os.name").toLowerCase().startsWith("win") ? "java.exe" : "java";
-        commands[0] =
-            Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
-      }
-      System.out.println("Running " + commands[0] + " in " + baseDirectory);
-      builder = new ProcessBuilder(commands).directory(baseDirectory.toFile());
-      if (!javaHome.isEmpty()) builder.environment().put("JAVA_HOME", javaHome);
-    }
-
-    void genSources(int count) throws IOException {
-      final Path src = projectBaseDirectory.resolve(srcDirectory("main")).resolve("blah");
-      Files.createDirectories(src);
-      for (int i = 1; i <= count; ++i) {
-        Files.writeString(src.resolve("Blah" + i + ".scala"), generatedSource(i));
-      }
-    }
-
-    void start() throws IOException {
-      if (forkProcess == null) forkProcess = new ForkProcess(builder.start());
-    }
-
-    @Override
-    public void close() {
-      if (forkProcess != null) {
-        forkProcess.close();
-        forkProcess = null;
-      }
+      this.projectLayout = projectLayout;
+      this.buildServerFactory = buildServerFactory;
+      initProject(projectLayout);
     }
   }
 
@@ -642,11 +807,163 @@ public class Main {
     }
   }
 
+  private static class ProcessIOThread extends Thread {
+    private final Process process;
+    private final Consumer<String> consumer;
+
+    ProcessIOThread(final Process process, final Consumer<String> consumer) {
+      super("process-io-thread-" + process.pid());
+      this.process = process;
+      this.consumer = consumer;
+      setDaemon(true);
+      start();
+    }
+
+    ProcessIOThread(final Process process) {
+      this(process, System.err::print);
+    }
+
+    @Override
+    public void run() {
+      // Reads the input and error streams of a process and dumps them to
+      // the main process output streams
+      final InputStream is = process.getInputStream();
+      final InputStream es = process.getErrorStream();
+      try {
+        while (true) {
+          {
+            final StringBuilder builder = new StringBuilder();
+            while (is.available() > 0) {
+              builder.append((char) is.read());
+            }
+            if (builder.length() > 0) {
+              consumer.accept(builder.toString());
+            }
+          }
+          {
+            final StringBuilder builder = new StringBuilder();
+            while (es.available() > 0) {
+              builder.append((char) es.read());
+            }
+            if (builder.length() > 0) {
+              consumer.accept(builder.toString());
+            }
+          }
+          Thread.sleep(2);
+        }
+      } catch (final IOException | InterruptedException e) {
+        // exit on interrupt
+      }
+    }
+  }
+
+  private static void installBloop(final Path dir, final String javaHome) throws IOException {
+    runProc(
+        "python", dir.resolve("install.py").toString(), "--dest", dir.resolve("dist").toString());
+    final var sbtLaunchJar = dir.resolve("bin").resolve("sbt-launch.jar").toString();
+    final var builder = getBuilder(dir, javaHome, "java", "-jar", sbtLaunchJar, "bloopInstall");
+    runProc(5, TimeUnit.MINUTES, false, builder);
+  }
+
+  private static Supplier<Boolean> bloopUpCheck(final Path dir) {
+    final var binary = dir.resolve("dist").resolve("bloop").toString();
+    return () -> {
+      var up = false;
+      while (!up) {
+        try {
+          up = runProc(5, TimeUnit.SECONDS, false, "python", binary, "about");
+          Thread.sleep(100);
+        } catch (final IOException | InterruptedException e) {
+        }
+      }
+      return true;
+    };
+  }
+
   private static long getModifiedTimeOrZero(final Path path) {
     try {
       return Files.getLastModifiedTime(path).toMillis();
     } catch (final IOException e) {
       return 0;
+    }
+  }
+
+  private static double getProcessCpuUtilization(final int pid, final int delaySeconds)
+      throws IOException, InterruptedException {
+    final var s = Integer.toString(delaySeconds);
+    final var p = Integer.toString(pid);
+    if (isMac) {
+      final var proc =
+          new ProcessBuilder("top", "-pid", p, "-d", "-s", s, "-l", "2", "-stats", "cpu").start();
+      assert (proc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var result = new String(proc.getInputStream().readAllBytes());
+      final var it = result.lines().iterator();
+      while (it.hasNext()) {
+        final var cpu = it.next();
+        if (!it.hasNext()) {
+          try {
+            return Double.valueOf(cpu);
+          } catch (final NumberFormatException e) {
+            return -1;
+          }
+        }
+      }
+      return 0.0;
+    } else if (isWin) {
+      final var builder = new ProcessBuilder("powershell.exe", "Get-Process", "-Id", p);
+      final var firstProc = builder.start();
+      assert (firstProc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var firstResult = new String(firstProc.getInputStream().readAllBytes());
+      final var first = firstResult.lines().iterator();
+      var startSeconds = -1.0d;
+      while (first.hasNext()) {
+        final var cpuLine = first.next();
+        try {
+          startSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
+        } catch (final Exception e) {
+        }
+      }
+      Thread.sleep(delaySeconds * 1000);
+      final var secondProc = builder.start();
+      assert (secondProc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var secondResult = new String(secondProc.getInputStream().readAllBytes());
+      final var second = secondResult.lines().iterator();
+      var finishSeconds = -1.0d;
+      while (second.hasNext()) {
+        final var cpuLine = second.next();
+        try {
+          finishSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
+        } catch (final Exception e) {
+        }
+      }
+      if (startSeconds != -1.0d && finishSeconds != -1.0d) {
+        return ((int) ((finishSeconds - startSeconds) / delaySeconds * 100 * 100)) / 100.0;
+      }
+      return -1;
+    } else {
+      final var proc = new ProcessBuilder("top", "-p", p, "-b", "-d", s, "-n", "2").start();
+      assert (proc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var result = new String(proc.getInputStream().readAllBytes());
+      final var it = result.lines().iterator();
+      while (it.hasNext()) {
+        final var cpuLine = it.next();
+        if (!it.hasNext()) {
+          try {
+            return Double.valueOf(cpuLine.split("[ ]+")[9]);
+          } catch (final NumberFormatException e) {
+            return -1;
+          }
+        }
+      }
+      return 0.0;
     }
   }
 }

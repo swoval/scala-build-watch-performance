@@ -12,48 +12,63 @@ until it has been written. It then compares the last modified time of the source
 file and the test output file to determine the end to end latency between
 modifying the source file and the test completing.
 
+The test also checks the cpu utilization of the continuous build while waiting
+for updates. After the tests completes, the tool calculates the average cpu
+utilization of the forked build tool process for five seconds and reports the
+results.
+
 The results below are taken from 10 iterations. Before the first iteration,
 the tool warms up the jvm with 5 iterations whose results are discareded. The
 total time is the time between forking the process and all of the test iterations
 completing.
 
-### linux
-project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 2680 | 2988 | 2796 | 78046
-mill-0.3.6 (3 source files) | 4772 | 5200 | 5021 | 131054
-sbt-0.13.17 (3 source files) | 1580 | 2284 | 1772 | 153263
-sbt-1.3.0 (3 source files) | 364 | 668 | 502 | 80426
-gradle-5.4.1 (5003 source files) | 3948 | 4368 | 4125 | 112568
-mill-0.3.6 (5003 source files) | 6812 | 7744 | 7230 | 155183
-sbt-0.13.17 (5003 source files) | 2448 | 3560 | 2634 | 84141
-sbt-1.3.0 (5003 source files) | 1040 | 1308 | 1123 | 66833
+### Linux
+All tests are run on a travis-ci virtual machine on ubuntu trusty using an ext4
+file system.
 
-### mac
-project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 8842 | 11470 | 10340 | 162813
-mill-0.3.6 (3 source files) | 3716 | 4107 | 3969 | 99997
-sbt-0.13.17 (3 source files) | 1332 | 1988 | 1601 | 44007
-sbt-1.3.0 (3 source files) | 324 | 470 | 371 | 28189
-gradle-5.4.1 (5003 source files) | 9046 | 11345 | 10329 | 279254
-mill-0.3.6 (5003 source files) | 6504 | 8985 | 7170 | 139627
-sbt-0.13.17 (5003 source files) | 3164 | 3726 | 3375 | 96043
-sbt-1.3.0 (5003 source files) | 1410 | 1681 | 1530 | 62114
+project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |
+:------- | -------: | -------: | --------: | ---------: | ----: |
+sbt-1.3.0 (3 source files) |` 427 `|` 585 `|` 522 `|` 40840 `| 5.4
+sbt-1.3.0 (5003 source files) |` 1101 `|` 1807 `|` 1261 `|` 71880 `| 4.8
+sbt-0.13.17 (3 source files) |` 1600 `|` 2073 `|` 1773 `|` 52281 `| 6.4
+sbt-0.13.17 (5003 source files) |` 2588 `|` 3709 `|` 2874 `|` 90142 `| 22.2
+gradle-5.4.1 (3 source files) |` 2705 `|` 3044 `|` 2846 `|` 80450 `| 0.2
+gradle-5.4.1 (5003 source files) |` 4088 `|` 4357 `|` 4182 `|` 116374 `| 0.2
+mill-0.3.6 (3 source files) |` 5003 `|` 5256 `|` 5120 `|` 129747 `| 3.2
+bloop-1.2.5 (3 source files) |` 7002 `|` 7597 `|` 7214 `|` 148343 `| 1.0
+bloop-1.2.5 (5003 source files) |` 7174 `|` 8323 `|` 7601 `|` 165949 `| 20.2
+mill-0.3.6 (5003 source files) |` 7072 `|` 7369 `|` 7198 `|` 156293 `| 36.0
 
-Note that gradle performs very poorly because it uses the built in jvm
-[WatchService](https://docs.oracle.com/javase/8/docs/api/java/nio/file/WatchService.html)
-to monitor file. On osx, the defualt `WatchService` is a slow polling implementation.
+### Mac
+All tests are run on a travis-ci virtual machine on High Sierra using the HFS+
+file system.
 
+project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |
+:------- | -------: | -------: | --------: | ---------: | ----: |
+sbt-1.3.0 (3 source files) |` 394 `|` 534 `|` 459 `|` 38067 `| 1.2
+sbt-1.3.0 (5003 source files) |` 1163 `|` 1287 `|` 1231 `|` 73216 `| 1.6
+sbt-0.13.17 (3 source files) |` 1659 `|` 2038 `|` 1807 `|` 53694 `| 4.9
+gradle-5.4.1 (3 source files) |` 4118 `|` 4485 `|` 4360 `|` 100233 `| 0.1
+sbt-0.13.17 (5003 source files) |` 5044 `|` 5561 `|` 5199 `|` 142877 `| 67.3
+mill-0.3.6 (3 source files) |` 5172 `|` 5437 `|` 5279 `|` 127697 `| 2.2
+bloop-1.2.5 (3 source files) |` 6393 `|` 7217 `|` 6675 `|` 136354 `| 1.1
+gradle-5.4.1 (5003 source files) |` 6259 `|` 6699 `|` 6433 `|` 147034 `| 0.1
+bloop-1.2.5 (5003 source files) |` 8257 `|` 8951 `|` 8453 `|` 183090 `| 0.4
+mill-0.3.6 (5003 source files) |` 8894 `|` 9478 `|` 9155 `|` 189889 `| 58.4
 
-### windows
- project | min (ms) | max (ms) | mean (ms) | total (ms)
-:------- | :------: | :------: | :------: | :------:
-gradle-5.4.1 (3 source files) | 2410 | 2619 | 2491 | 69213
-mill-0.3.6 (3 source files) | 3982 | 4380 | 4140 | 108310
-sbt-0.13.17 (3 source files) | 1466 | 1904 | 1550 | 43391
-sbt-1.3.0 (3 source files) | 324 | 524 | 396 | 35296
-gradle-5.4.1 (5003 source files) | 3798 | 4106 | 3896 | 96041
-mill-0.3.6 (5003 source files) | 7199 | 7958 | 7621 | 155524
-sbt-0.13.17 (5003 source files) | 3548 | 4122 | 3680 | 93753
-sbt-1.3.0 (5003 source files) | 1148 | 1313 | 1234 | 61056
+### Windows
+All tests are run on an appveyor vm using the Visual Studio 17 disk image (which
+should have Windows 10 api compatibility).
+
+project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |
+:------- | -------: | -------: | --------: | ---------: | ----: |
+sbt-1.3.0 (3 source files) |` 328 `|` 505 `|` 402 `|` 30022 `| 1.6
+sbt-1.3.0 (5003 source files) |` 1050 `|` 1244 `|` 1142 `|` 59030 `| 2.99
+sbt-0.13.17 (3 source files) |` 1398 `|` 1576 `|` 1483 `|` 41565 `| 2.19
+gradle-5.4.1 (3 source files) |` 2228 `|` 2445 `|` 2321 `|` 66939 `| 0.0
+sbt-0.13.17 (5003 source files) |` 3366 `|` 4005 `|` 3568 `|` 91450 `| 49.2
+gradle-5.4.1 (5003 source files) |` 3635 `|` 4343 `|` 3837 `|` 92657 `| 0.0
+mill-0.3.6 (3 source files) |` 3991 `|` 4283 `|` 4154 `|` 103170 `| 1.59
+mill-0.3.6 (5003 source files) |` 7043 `|` 8030 `|` 7440 `|` 151659 `| 65.19
+
+Note that the bloop fails to run on appveyor.
