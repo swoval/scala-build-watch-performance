@@ -164,9 +164,10 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           layout = new ProjectLayout(projectBase, projectBase);
+          final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.color=true", "-jar", binary, "~test");
+                  projectBase, javaHome, "java", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
@@ -383,7 +384,8 @@ public class Main {
       System.out.println("Ran " + iterations + " tests. Average latency was " + average + " ms.");
       final var end = System.nanoTime();
       final double cpu = getProcessCpuUtilization(server.pid(), cpuTimeout);
-      System.out.println(cpu);
+      System.out.println(
+          "Average cpu utilization percentage over " + cpuTimeout + " seconds was " + cpu);
       return new RunResult(project.name, count, result, (end - start) / 1000000, cpu);
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
@@ -566,7 +568,8 @@ public class Main {
       commands[0] = Paths.get(javaHome).resolve("bin").resolve(commandName).normalize().toString();
     }
     System.out.println("Running " + commands[0] + " in " + directory);
-    final var processBuilder = new ProcessBuilder(commands).directory(directory.toFile());
+    final var processBuilder =
+        new ProcessBuilder(commands).inheritIO().directory(directory.toFile());
     processBuilder.environment().remove("SBT_OPTS");
     if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
     return processBuilder;
@@ -909,7 +912,7 @@ public class Main {
       }
       return 0.0;
     } else if (isWin) {
-      final var builder = new ProcessBuilder("ps", "-ID", p);
+      final var builder = new ProcessBuilder("powershell.exe", "Get-Process", "-Id", p);
       final var firstProc = builder.start();
       assert (firstProc.waitFor() == 0);
       // For some reason the process builder doesn't wait for top to actually complete, but
@@ -921,26 +924,26 @@ public class Main {
         final var cpuLine = first.next();
         try {
           startSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
-        } catch (final NumberFormatException e) {
+        } catch (final Exception e) {
         }
       }
       Thread.sleep(delaySeconds * 1000);
       final var secondProc = builder.start();
-      assert (firstProc.waitFor() == 0);
+      assert (secondProc.waitFor() == 0);
       // For some reason the process builder doesn't wait for top to actually complete, but
       // reading from the input stream blocks until top is over.
-      final var secondResult = new String(firstProc.getInputStream().readAllBytes());
+      final var secondResult = new String(secondProc.getInputStream().readAllBytes());
       final var second = secondResult.lines().iterator();
       var finishSeconds = -1.0d;
       while (second.hasNext()) {
         final var cpuLine = second.next();
         try {
           finishSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
-        } catch (final NumberFormatException e) {
+        } catch (final Exception e) {
         }
       }
       if (startSeconds != -1.0d && finishSeconds != -1.0d) {
-       return (finishSeconds - startSeconds) / delaySeconds;
+        return ((int) ((finishSeconds - startSeconds) / delaySeconds * 100 * 100)) / 100.0;
       }
       return -1;
     } else {
