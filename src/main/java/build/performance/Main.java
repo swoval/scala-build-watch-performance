@@ -164,9 +164,10 @@ public class Main {
         if (projectName.startsWith("sbt")) {
           final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           layout = new ProjectLayout(projectBase, projectBase);
+          final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.color=true", "-jar", binary, "~test");
+                  projectBase, javaHome, "java", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
