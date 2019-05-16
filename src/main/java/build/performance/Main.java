@@ -909,7 +909,40 @@ public class Main {
       }
       return 0.0;
     } else if (isWin) {
-      return 0.0;
+      final var builder = new ProcessBuilder("ps", "-ID", p);
+      final var firstProc = builder.start();
+      assert (firstProc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var firstResult = new String(firstProc.getInputStream().readAllBytes());
+      final var first = firstResult.lines().iterator();
+      var startSeconds = -1.0d;
+      while (first.hasNext()) {
+        final var cpuLine = first.next();
+        try {
+          startSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
+        } catch (final NumberFormatException e) {
+        }
+      }
+      Thread.sleep(delaySeconds * 1000);
+      final var secondProc = builder.start();
+      assert (firstProc.waitFor() == 0);
+      // For some reason the process builder doesn't wait for top to actually complete, but
+      // reading from the input stream blocks until top is over.
+      final var secondResult = new String(firstProc.getInputStream().readAllBytes());
+      final var second = secondResult.lines().iterator();
+      var finishSeconds = -1.0d;
+      while (second.hasNext()) {
+        final var cpuLine = second.next();
+        try {
+          finishSeconds = Double.valueOf(cpuLine.split("[ ]+")[5]);
+        } catch (final NumberFormatException e) {
+        }
+      }
+      if (startSeconds != -1.0d && finishSeconds != -1.0d) {
+       return (finishSeconds - startSeconds) / delaySeconds;
+      }
+      return -1;
     } else {
       final var proc = new ProcessBuilder("top", "-p", p, "-b", "-d", s, "-n", "2").start();
       assert (proc.waitFor() == 0);
