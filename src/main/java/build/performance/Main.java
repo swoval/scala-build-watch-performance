@@ -263,7 +263,7 @@ public class Main {
                 run(
                     project,
                     server,
-                    "Simple",
+                    "Spark",
                     extraSources,
                     timeout,
                     iterations,
@@ -498,8 +498,8 @@ public class Main {
     Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
     final var sparkMainPath = projectLayout.getMainSourceDirectory().resolve("SparkMain.scala");
     Files.writeString(sparkMainPath, loadSourceFile("SparkMain.scala"));
-    Files.createDirectories(projectLayout.getTestSourceDirectory());
-    Files.writeString(sparkMainPath, loadSourceFile("SimpleMain.scala"));
+    final var simpleMainPath = projectLayout.getMainSourceDirectory().resolve("SimpleMain.scala");
+    Files.writeString(simpleMainPath, loadSourceFile("SimpleMain.scala"));
     Files.createDirectories(projectLayout.getTestSourceDirectory());
   }
 
