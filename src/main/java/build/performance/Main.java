@@ -251,18 +251,22 @@ public class Main {
         }
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(layout.getBaseDirectory(), 0);
-          results.add(run(project, 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
-          genSources(layout, extraSources);
-          System.out.println("generated " + extraSources + " sources");
-          results.add(
-              run(
-                  project,
-                  extraSources,
-                  timeout,
-                  iterations,
-                  warmupIterations,
-                  cpuTimeout,
-                  watcher));
+          results.add(run(project, "Spark", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          results.add(run(project, "Akka", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          if (extraSources > 0) {
+            genSources(layout, extraSources);
+            System.out.println("generated " + extraSources + " sources");
+            results.add(
+                run(
+                    project,
+                    "Simple",
+                    extraSources,
+                    timeout,
+                    iterations,
+                    warmupIterations,
+                    cpuTimeout,
+                    watcher));
+          }
         } catch (final Exception e) {
           System.err.println("Error running tests for " + project.name);
           e.printStackTrace();
@@ -349,6 +353,7 @@ public class Main {
   @SuppressWarnings("unused")
   private static RunResult run(
       final Project project,
+      final String type,
       final int count,
       final int timeoutMinutes,
       final int iterations,
@@ -358,7 +363,7 @@ public class Main {
       throws TimeoutException, IOException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
-    project.setType("Spark");
+    project.setType(type);
     try (final var server = project.buildServerFactory.newServer()) {
       long totalElapsed = 0;
       {
@@ -394,7 +399,7 @@ public class Main {
       final double cpu = getProcessCpuUtilization(server.pid(), cpuTimeout);
       System.out.println(
           "Average cpu utilization percentage over " + cpuTimeout + " seconds was " + cpu);
-      return new RunResult(project.name, count, result, (end - start) / 1000000, cpu);
+      return new RunResult(project.name + " " + type, count, result, (end - start) / 1000000, cpu);
     } catch (final IOException | InterruptedException e) {
       e.printStackTrace();
       throw new RuntimeException(e);
@@ -662,7 +667,6 @@ public class Main {
       Files.writeString(testPath, testSource(type));
     }
   }
-
 
   private static String generatedSource(final int counter) {
     final int lines = 75;

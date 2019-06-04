@@ -6,5 +6,4 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % "2.4.3",
   "org.scalatest" %% "scalatest" % "3.0.5" % "test",
 )
-testFrameworks := Seq(TestFrameworks.ScalaTest)
 watchAntiEntropy := 0.millis
