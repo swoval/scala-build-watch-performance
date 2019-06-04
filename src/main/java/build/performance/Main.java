@@ -191,7 +191,7 @@ public class Main {
                   "mill.MillMain",
                   "-i",
                   "-w",
-                  "perf.test.testLocal");
+                  "perf.test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
