@@ -167,7 +167,14 @@ public class Main {
           final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.color=" + color, "-jar", binary, "~test");
+                  projectBase,
+                  javaHome,
+                  "java",
+                  "-XX:+UseParallelGC",
+                  "-Dsbt.color=" + color,
+                  "-jar",
+                  binary,
+                  "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
@@ -348,9 +355,10 @@ public class Main {
       final int warmupIterations,
       final int cpuTimeout,
       final PathWatcher<PathWatchers.Event> watcher)
-      throws TimeoutException {
+      throws TimeoutException, IOException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
+    project.setType("Spark");
     try (final var server = project.buildServerFactory.newServer()) {
       long totalElapsed = 0;
       {
@@ -483,10 +491,9 @@ public class Main {
     Files.createDirectories(projectLayout.getMainSourceDirectory());
     final var akkaMainPath = projectLayout.getMainSourceDirectory().resolve("AkkaMain.scala");
     Files.writeString(akkaMainPath, loadSourceFile("AkkaMain.scala"));
-
+    final var sparkMainPath = projectLayout.getMainSourceDirectory().resolve("SparkMain.scala");
+    Files.writeString(sparkMainPath, loadSourceFile("SparkMain.scala"));
     Files.createDirectories(projectLayout.getTestSourceDirectory());
-    final var akkaTestPath = projectLayout.getTestSourceDirectory().resolve("AkkaPerfTest.scala");
-    Files.writeString(akkaTestPath, loadSourceFile("AkkaPerfTest.scala"));
   }
 
   private static void genSources(final ProjectLayout layout, final int count) throws IOException {
@@ -522,6 +529,19 @@ public class Main {
         throw new IllegalStateException(e);
       }
     }
+  }
+
+  private static final String testSource(final String type) {
+    return "package sbt.benchmark\n"
+        + "\n"
+        + "import org.scalatest.{ FlatSpec, Matchers }\n"
+        + "\n"
+        + "class PerfTest extends FlatSpec {\n"
+        + "\"Run\" should \"exit\" in {\n"
+        + ("    " + type + "Main.run(Array.empty[String])\n")
+        + "    assert(true)\n"
+        + "  }\n"
+        + "}";
   }
 
   private static class ClientServerFactory implements BuildServerFactory {
@@ -636,7 +656,13 @@ public class Main {
       this.buildServerFactory = buildServerFactory;
       initProject(projectLayout);
     }
+
+    void setType(final String type) throws IOException {
+      final var testPath = projectLayout.getTestSourceDirectory().resolve("PerfTest.scala");
+      Files.writeString(testPath, testSource(type));
+    }
   }
+
 
   private static String generatedSource(final int counter) {
     final int lines = 75;
