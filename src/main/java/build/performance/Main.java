@@ -499,6 +499,8 @@ public class Main {
     final var sparkMainPath = projectLayout.getMainSourceDirectory().resolve("SparkMain.scala");
     Files.writeString(sparkMainPath, loadSourceFile("SparkMain.scala"));
     Files.createDirectories(projectLayout.getTestSourceDirectory());
+    Files.writeString(sparkMainPath, loadSourceFile("SimpleMain.scala"));
+    Files.createDirectories(projectLayout.getTestSourceDirectory());
   }
 
   private static void genSources(final ProjectLayout layout, final int count) throws IOException {
