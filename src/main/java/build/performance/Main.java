@@ -56,7 +56,7 @@ public class Main {
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
-    allProjects.add("mill-0.3.6");
+    allProjects.add("mill-0.4.0");
     allProjects.add("bloop-1.2.5");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
@@ -170,7 +170,6 @@ public class Main {
                   projectBase,
                   javaHome,
                   "java",
-                  "-XX:+UseParallelGC",
                   "-Dsbt.color=" + color,
                   "-jar",
                   binary,
@@ -185,18 +184,19 @@ public class Main {
                   javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
-                  "-DMILL_VERSION=0.3.6",
+                  "-DMILL_VERSION=0.4.0",
                   "-Djna.nosys=true",
                   "-cp",
                   binary,
                   "mill.MillMain",
                   "-i",
                   "-w",
-                  "perf.test");
+                  "perf.test.testLocal");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
+          System.out.println(binary);
           layout = new ProjectLayout(projectBase, projectBase);
           final var factory =
               new SimpleServerFactory(
@@ -249,16 +249,20 @@ public class Main {
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
         }
-        try (final var watcher = PathWatchers.get(true)) {
+        try (
+            final var watcher = PathWatchers.get(true);
+            final var server = project.buildServerFactory.newServer()
+            ) {
           watcher.register(layout.getBaseDirectory(), 0);
-          results.add(run(project, "Spark", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
-          results.add(run(project, "Akka", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          //results.add(run(project, server, "Spark", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          results.add(run(project, server, "Akka", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
           if (extraSources > 0) {
             genSources(layout, extraSources);
             System.out.println("generated " + extraSources + " sources");
             results.add(
                 run(
                     project,
+                    server,
                     "Simple",
                     extraSources,
                     timeout,
@@ -353,6 +357,7 @@ public class Main {
   @SuppressWarnings("unused")
   private static RunResult run(
       final Project project,
+      final TimeoutAutoCloseable server,
       final String type,
       final int count,
       final int timeoutMinutes,
@@ -360,11 +365,10 @@ public class Main {
       final int warmupIterations,
       final int cpuTimeout,
       final PathWatcher<PathWatchers.Event> watcher)
-      throws TimeoutException, IOException {
+      throws TimeoutException, IOException, InterruptedException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
     project.setType(type);
-    try (final var server = project.buildServerFactory.newServer()) {
       long totalElapsed = 0;
       {
         System.out.println("Waiting for startup");
@@ -400,10 +404,6 @@ public class Main {
       System.out.println(
           "Average cpu utilization percentage over " + cpuTimeout + " seconds was " + cpu);
       return new RunResult(project.name + " " + type, count, result, (end - start) / 1000000, cpu);
-    } catch (final IOException | InterruptedException e) {
-      e.printStackTrace();
-      throw new RuntimeException(e);
-    }
   }
 
   private static class ForkProcess implements TimeoutAutoCloseable {
