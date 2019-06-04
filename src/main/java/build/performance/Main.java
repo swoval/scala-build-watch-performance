@@ -254,8 +254,8 @@ public class Main {
             final var server = project.buildServerFactory.newServer()
             ) {
           watcher.register(layout.getBaseDirectory(), 0);
-          //results.add(run(project, server, "Spark", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
-          results.add(run(project, server, "Akka", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          results.add(run(project, server, "Spark", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
+          //results.add(run(project, server, "Akka", 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
           if (extraSources > 0) {
             genSources(layout, extraSources);
             System.out.println("generated " + extraSources + " sources");
