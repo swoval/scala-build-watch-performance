@@ -55,6 +55,8 @@ public class Main {
     allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
+    allProjects.add("sbt-1.3.0-fokr");
+    allProjects.add("sbt-1.3.0-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
     allProjects.add("bloop-1.3.2");
@@ -167,7 +169,7 @@ public class Main {
           final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.turbo=true", "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
+                  projectBase, javaHome, "java", "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
@@ -371,6 +373,7 @@ public class Main {
       if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
         if (project.name.startsWith("bloop")) Thread.sleep(1000);
+        Thread.sleep(600);
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
           long elapsed = updateResult.elapsed();
