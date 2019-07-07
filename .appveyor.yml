@@ -33,7 +33,7 @@ test_script:
     - SET PATH=%JAVA_HOME%\bin;%OLD_PATH%
     - md target\classes
     - javac -cp lib\swoval\file-tree-views-2.1.1.jar src\main\java\build\performance\Main.java -d target\classes
-    - java -cp "target\classes;src\main\resources;lib\swoval\file-tree-views-2.1.1.jar" build.performance.Main -i 21 -w 5 -e 5000 all -j "C:\Program Files\Java\jdk1.8.0"
+    - java -cp "target\classes;src\main\resources;lib\swoval\file-tree-views-2.1.1.jar" build.performance.Main -i 11 -w 5 -e 5000 all -j "C:\Program Files\Java\jdk1.8.0"
 
 cache:
   - '%USERPROFILE%\.ivy2\cache'

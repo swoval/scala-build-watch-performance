@@ -33,7 +33,7 @@ install:
 
 script:
     - $WATCH_JAVA_HOME/bin/javac -cp lib/swoval/file-tree-views-2.1.1.jar src/main/java/build/performance/Main.java -d target/classes
-    - $WATCH_JAVA_HOME/bin/java -cp "target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar" build.performance.Main -i 21 -w 5 -e 5000 all
+    - $WATCH_JAVA_HOME/bin/java -cp "target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar" build.performance.Main -i 11 -w 5 -e 5000 all
 
 cache:
   directories:

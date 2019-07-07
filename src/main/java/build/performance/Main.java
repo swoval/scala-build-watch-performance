@@ -370,7 +370,7 @@ public class Main {
       // bloop takes a moment to start watching files
       if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
-        if (project.name.startsWith("bloop")) Thread.sleep(100);
+        if (project.name.startsWith("bloop")) Thread.sleep(1000);
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
           long elapsed = updateResult.elapsed();
