@@ -57,7 +57,7 @@ public class Main {
     allProjects.add("sbt-1.3.0");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
-    allProjects.add("bloop-1.2.5");
+    allProjects.add("bloop-1.3.2");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -217,7 +217,7 @@ public class Main {
                   "-jar",
                   bloopJar,
                   "launch",
-                  "ch.epfl.scala:bloop-frontend_2.12:1.2.5",
+                  "ch.epfl.scala:bloop-frontend_2.12:1.3.2",
                   "-r",
                   "bintray:scalameta/maven",
                   "-r",
@@ -236,7 +236,7 @@ public class Main {
                   "python",
                   bloopBin,
                   "test",
-                  "bloop-1-2-5",
+                  "bloop-1-3-2",
                   "-w");
           project = new Project(projectName, layout, factory);
         } else {

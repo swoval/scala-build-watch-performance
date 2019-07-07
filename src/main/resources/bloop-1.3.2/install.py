@@ -21,9 +21,9 @@ else:
     from urllib.parse import urlparse as urlparse
     from urllib.request import urlopen as urlopen
 
-NAILGUN_COMMIT = "0c325237"
-BLOOP_VERSION = "1.2.5"
-COURSIER_VERSION = "1.1.0-M8"
+NAILGUN_COMMIT = "9327a60a"
+BLOOP_VERSION = "1.3.2"
+COURSIER_VERSION = "1.1.0-M14-4"
 BLOOP_DEFAULT_INSTALLATION_TARGET = join(expanduser("~"), ".bloop")
 
 # Check whether this script has been customized to allow installation without passing args
@@ -45,7 +45,7 @@ parser.add_argument(
     '-d',
     '--dest',
     default=BLOOP_DEFAULT_INSTALLATION_TARGET,
-    help="Where to install Bloop, defaults to %s" % os.getcwd())
+    help="Where to install Bloop, defaults to %s" % BLOOP_DEFAULT_INSTALLATION_TARGET)
 parser.add_argument(
     '-v',
     '--version',
@@ -81,7 +81,7 @@ BASH_COMPLETION_DIR = join(BLOOP_INSTALLATION_TARGET, "bash")
 FISH_COMPLETION_DIR = join(BLOOP_INSTALLATION_TARGET, "fish")
 SYSTEMD_SERVICE_DIR = join(BLOOP_INSTALLATION_TARGET, "systemd")
 XDG_DIR = join(BLOOP_INSTALLATION_TARGET, "xdg")
-COURSIER_URL = "https://github.com/coursier/coursier/raw/v" + args.coursier + "/coursier"
+COURSIER_URL = "https://github.com/coursier/coursier/releases/download/v" + args.coursier + "/coursier"
 
 # If this is not a released version of Bloop, we need to extract the commit SHA
 # to know how to download the completion and startup scripts.
@@ -240,14 +240,14 @@ def coursier_bootstrap(target, main):
                 check_call(["java"] + http + https + ["-Divy.home=" + args.ivy_home, "-jar", BLOOP_COURSIER_TARGET, "bootstrap", BLOOP_ARTIFACT,
                     "-r", "bintray:scalameta/maven",
                     "-r", "bintray:scalacenter/releases",
-                    "-o", target, "-f", "--standalone", "--main", main
+                    "-o", target, "-f", "--main", main
                 ])
             else:
                 check_call(["java"] + http + https + ["-jar", BLOOP_COURSIER_TARGET, "bootstrap", BLOOP_ARTIFACT,
                     "-r", "bintray:scalameta/maven",
                     "-r", "bintray:scalacenter/releases",
                     "-r", "https://oss.sonatype.org/content/repositories/staging",
-                    "-o", target, "-f", "--standalone", "--main", main
+                    "-o", target, "-f", "--main", main
                 ])
     except CalledProcessError as e:
         print("Coursier couldn't create %s. Please report an issue." % target)
@@ -283,7 +283,7 @@ if is_windows:
         output_file.write(generate_bat(BLOOP_CLIENT_TARGET))
     make_executable(target)
 
-    if not "SCOOP" in os.environ:
+    if not "BLOOP_IN_SCOOP" in os.environ:
         print("You can run `bloop` in Windows with " + target)
         print("Recommended: Add " + BLOOP_INSTALLATION_TARGET + " to the Windows $PATH")
 
