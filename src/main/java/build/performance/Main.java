@@ -167,7 +167,7 @@ public class Main {
           final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.resident.limit=16", "-Dsbt.turbo=true", "-Dsbt.color=" + color, "-jar", binary, "~test");
+                  projectBase, javaHome, "java", "-Dsbt.turbo=true", "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
@@ -266,7 +266,7 @@ public class Main {
               left.count == right.count
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
-      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |");
+      System.out.println(" project | min (ms) | max (ms) | median (ms) | total (ms) | cpu % |");
       System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
         System.out.println(result.markdownRow());
@@ -327,11 +327,13 @@ public class Main {
       var min = Long.MAX_VALUE;
       var max = Long.MIN_VALUE;
       var avg = 0;
+      var times = new ArrayList<Long>(results.length);
       for (var elapsed : results) {
         min = Math.min(min, elapsed);
         max = Math.max(max, elapsed);
-        avg += elapsed;
+        times.add(elapsed);
       }
+      Collections.sort(times);
       avg /= results.length;
       return this.name
           + (" (" + (count + 3) + " source files) | ")
