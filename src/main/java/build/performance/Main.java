@@ -326,7 +326,7 @@ public class Main {
     String markdownRow() {
       var min = Long.MAX_VALUE;
       var max = Long.MIN_VALUE;
-      var avg = 0;
+      var avg = 0L;
       var times = new ArrayList<Long>(results.length);
       for (var elapsed : results) {
         min = Math.min(min, elapsed);
@@ -334,7 +334,12 @@ public class Main {
         times.add(elapsed);
       }
       Collections.sort(times);
-      avg /= results.length;
+      if (results.length % 2 == 0) {
+        int base = results.length / 2;
+        avg = (times.get(base) + times.get(base - 1)) / 2;
+      } else {
+        avg = times.get(results.length / 2);
+      }
       return this.name
           + (" (" + (count + 3) + " source files) | ")
           + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
@@ -365,6 +370,7 @@ public class Main {
       // bloop takes a moment to start watching files
       if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
+        if (project.name.startsWith("bloop")) Thread.sleep(100);
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
           long elapsed = updateResult.elapsed();
