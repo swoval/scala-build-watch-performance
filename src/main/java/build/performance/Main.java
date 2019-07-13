@@ -55,7 +55,7 @@ public class Main {
     allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
-    allProjects.add("sbt-1.3.0-fokr");
+    allProjects.add("sbt-1.3.0-fork");
     allProjects.add("sbt-1.3.0-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
