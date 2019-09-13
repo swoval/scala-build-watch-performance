@@ -71,11 +71,13 @@ mill 0.3.6 (5003 source files) | 8397 | 9201 | 8896 | 189477 | 60.0
 All tests are run on an appveyor vm using the Visual Studio 17 disk image (which
 should have Windows 10 api compatibility).
 
+project | min (ms) | max (ms) | median (ms) | total (ms) | cpu % |
 :------- | :------: | :------: | :-------: | :--------: | :---: |
 sbt 1.3.0 turbo (3 source files) | 379 | 571 | 467 | 28019 | 1.6
 sbt 1.3.0 (3 source files) | 1011 | 1322 | 1115 | 46220 | 0.39
 sbt 1.3.0 turbo (5003 source files) | 1216 | 1857 | 1320 | 61526 | 0.99
 sbt 0.13.17 (3 source files) | 1381 | 1679 | 1445 | 43758 | 3.6
+sbt 1.3.0 (5003 source files) | 2184 | 2456 | 2299 | 78429 | 0.19
 gradle 5.4.1 (3 source files) | 2353 | 2574 | 2451 | 72313 | 0.0
 sbt 0.13.17 (5003 source files) | 3395 | 4266 | 3606 | 97515 | 47.6
 sbt 1.3.0 fork (3 source files) | 3710 | 4054 | 3832 | 84962 | 0.19
@@ -83,6 +85,5 @@ gradle 5.4.1 (5003 source files) | 3787 | 4010 | 3892 | 100764 | 0.0
 mill 0.3.6 (3 source files) | 4221 | 4407 | 4318 | 110936 | 1.59
 sbt 1.3.0 fork (5003 source files) | 4862 | 5457 | 5089 | 126370 | 1.8
 mill 0.3.6 (5003 source files) | 7548 | 8289 | 7961 | 170190 | 66.59
-sbt 1.3.0 (5003 source files) | 2184 | 2456 | 2299 | 78429 | 0.19
 
 Note that the bloop fails to run on appveyor.
