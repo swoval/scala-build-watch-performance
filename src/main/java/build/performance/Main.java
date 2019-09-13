@@ -55,9 +55,11 @@ public class Main {
     allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
     allProjects.add("sbt-1.3.0");
+    allProjects.add("sbt-1.3.0-fork");
+    allProjects.add("sbt-1.3.0-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
-    allProjects.add("bloop-1.2.5");
+    allProjects.add("bloop-1.3.2");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
       if (url == null) throw new NullPointerException();
@@ -167,7 +169,7 @@ public class Main {
           final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.color=" + color, "-jar", binary, "~test");
+                  projectBase, javaHome, "java", "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
@@ -217,7 +219,7 @@ public class Main {
                   "-jar",
                   bloopJar,
                   "launch",
-                  "ch.epfl.scala:bloop-frontend_2.12:1.2.5",
+                  "ch.epfl.scala:bloop-frontend_2.12:1.3.2",
                   "-r",
                   "bintray:scalameta/maven",
                   "-r",
@@ -236,7 +238,7 @@ public class Main {
                   "python",
                   bloopBin,
                   "test",
-                  "bloop-1-2-5",
+                  "bloop-1-3-2",
                   "-w");
           project = new Project(projectName, layout, factory);
         } else {
@@ -266,7 +268,7 @@ public class Main {
               left.count == right.count
                   ? left.name.compareTo(right.name)
                   : left.count - right.count);
-      System.out.println(" project | min (ms) | max (ms) | mean (ms) | total (ms) | cpu % |");
+      System.out.println(" project | min (ms) | max (ms) | median (ms) | total (ms) | cpu % |");
       System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
         System.out.println(result.markdownRow());
@@ -326,13 +328,20 @@ public class Main {
     String markdownRow() {
       var min = Long.MAX_VALUE;
       var max = Long.MIN_VALUE;
-      var avg = 0;
+      var avg = 0L;
+      var times = new ArrayList<Long>(results.length);
       for (var elapsed : results) {
         min = Math.min(min, elapsed);
         max = Math.max(max, elapsed);
-        avg += elapsed;
+        times.add(elapsed);
       }
-      avg /= results.length;
+      Collections.sort(times);
+      if (results.length % 2 == 0) {
+        int base = results.length / 2;
+        avg = (times.get(base) + times.get(base - 1)) / 2;
+      } else {
+        avg = times.get(results.length / 2);
+      }
       return this.name
           + (" (" + (count + 3) + " source files) | ")
           + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
@@ -363,6 +372,7 @@ public class Main {
       // bloop takes a moment to start watching files
       if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
+        if (project.name.startsWith("bloop")) Thread.sleep(1000);
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
           long elapsed = updateResult.elapsed();

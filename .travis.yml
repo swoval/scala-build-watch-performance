@@ -21,24 +21,15 @@ matrix:
 before_install:
     - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.0/install.sh | bash; . ~/.jabba/jabba.sh
     - ~/.jabba/bin/jabba install adopt@1.11.0-3
-    - wget https://github.com/sbt/sbt/releases/download/v1.2.8/sbt-1.2.8.tgz;
-    - tar -xvf sbt-1.2.8.tgz;
-    - rm sbt-1.2.8.tgz;
-    - mv sbt /tmp/sbt;
-    - git clone -b 1.3.0-RC1-fixes https://github.com/eatkins/sbt
-    - cd sbt
-    - /tmp/sbt/bin/sbt -Dsbt.version=1.3.0-RC1 publishLocal
-    - cd ..
-install:
-
 script:
     - $WATCH_JAVA_HOME/bin/javac -cp lib/swoval/file-tree-views-2.1.1.jar src/main/java/build/performance/Main.java -d target/classes
-    - $WATCH_JAVA_HOME/bin/java -cp "target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar" build.performance.Main -i 10 -w 5 -e 5000 all
+    - $WATCH_JAVA_HOME/bin/java -cp "target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar" build.performance.Main -i 11 -w 5 -e 5000 all
 
 cache:
   directories:
     - $HOME/.ivy2/cache
     - $HOME/.coursier/cache/v1
+    - $HOME/Library/Caches/Coursier/v1
     - $HOME/.sbt
 
 before_cache:
