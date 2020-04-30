@@ -104,6 +104,9 @@ Command arguments:
 * -e -- sets how many extra sources to add for the second round of testing to simulate large projects (default 5000)
 * -c -- how many seconds to sample cpu utilization during idle watch (default 5)
 * -t -- sets a timeout in seconds for each test iteration (default 10)
+* -j -- a custom java home for an alternate jdk
+* the tail arguments will be a space separated list of the tests to run, e.g.
+`sbt-1.3.10-turbo gradle-5.4.1`
 
 To test a SNAPSHOT sbt version, just change the version in
 src/main/resources/sbt-1.3*/project/build.properties to `1.4.0-SNAPSHOT`.
