@@ -87,3 +87,23 @@ sbt 1.3.0 fork (5003 source files) | 4862 | 5457 | 5089 | 126370 | 1.8
 mill 0.3.6 (5003 source files) | 7548 | 8289 | 7961 | 170190 | 66.59
 
 Note that the bloop fails to run on appveyor.
+
+You can use sbt to run the tests on your own machine with the `run` task. It is
+somewhat faster to compile and run by hand. To compile, run
+```
+javac -cp lib/swoval/file-tree-views-2.1.1.jar src/main/java/build/performance/Main.java -d target/classes
+```
+from the project root directory. To run, execute:
+```
+java -classpath target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar build.performance.Main -i 50 -w 50 -e 5000 sbt-1.3.0-turbo
+```
+
+Command arguments:
+* -i -- sets how many test iterations to run (default 5)
+* -w -- sets how many jvm warmup iterations to run before the counted test iterations (default 3)
+* -e -- sets how many extra sources to add for the second round of testing to simulate large projects (default 5000)
+* -c -- how many seconds to sample cpu utilization during idle watch (default 5)
+* -t -- sets a timeout in seconds for each test iteration (default 10)
+
+To test a SNAPSHOT sbt version, just change the version in
+src/main/resources/sbt-1.3*/project/build.properties to `1.4.0-SNAPSHOT`.
