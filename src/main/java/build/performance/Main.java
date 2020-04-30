@@ -58,7 +58,7 @@ public class Main {
     allProjects.add("sbt-1.3.10-fork");
     allProjects.add("sbt-1.3.10-turbo");
     allProjects.add("gradle-5.4.1");
-    allProjects.add("mill-0.3.6");
+    allProjects.add("mill-0.6.2");
     allProjects.add("bloop-1.3.2");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.10");
@@ -174,7 +174,7 @@ public class Main {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           layout = new ProjectLayout(projectBase, projectBase.resolve("perf"));
           final var factory = new SimpleServerFactory(projectBase, javaHome, "java",
-              "-DMILL_CLASSPATH=" + binary, "-DMILL_VERSION=0.3.6", "-Djna.nosys=true", "-cp",
+              "-DMILL_CLASSPATH=" + binary, "-DMILL_VERSION=0.6.2", "-Djna.nosys=true", "-cp",
               binary, "mill.MillMain", "-i", "-w", "perf.test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
