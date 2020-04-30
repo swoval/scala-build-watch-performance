@@ -95,8 +95,7 @@ javac -cp lib/swoval/file-tree-views-2.1.1.jar src/main/java/build/performance/M
 ```
 from the project root directory. To run, execute:
 ```
-java -classpath
-target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar build.performance.Main -i 50 -w 50 -e 5000 sbt-1.3.10-turbo
+java -classpath target/classes:src/main/resources:lib/swoval/file-tree-views-2.1.1.jar build.performance.Main -i 50 -w 50 -e 5000 sbt-1.3.10-turbo
 ```
 
 Command arguments:
