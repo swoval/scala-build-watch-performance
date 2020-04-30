@@ -21,9 +21,9 @@ else:
     from urllib.parse import urlparse as urlparse
     from urllib.request import urlopen as urlopen
 
-NAILGUN_COMMIT = "9327a60a"
-BLOOP_VERSION = "1.3.2"
-COURSIER_VERSION = "1.1.0-M14-4"
+NAILGUN_COMMIT = "a2520c1e"
+BLOOP_VERSION = "1.4.0-RC1"
+COURSIER_VERSION = "2.0.0-RC3-4"
 BLOOP_DEFAULT_INSTALLATION_TARGET = join(expanduser("~"), ".bloop")
 
 # Check whether this script has been customized to allow installation without passing args

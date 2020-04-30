@@ -59,7 +59,7 @@ public class Main {
     allProjects.add("sbt-1.3.10-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.6.2");
-    allProjects.add("bloop-1.3.2");
+    allProjects.add("bloop-1.4.0-RC1");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.10");
       if (url == null) throw new NullPointerException();
@@ -246,7 +246,7 @@ public class Main {
                   "python",
                   bloopBin,
                   "test",
-                  "bloop-1-3-2",
+                  "bloop-1-4-0-rc1",
                   "-w");
           project = new Project(projectName, layout, factory);
         } else {
