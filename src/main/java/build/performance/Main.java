@@ -169,7 +169,14 @@ public class Main {
           final var color = isWin ? "false" : "true";
           final var factory =
               new SimpleServerFactory(
-                  projectBase, javaHome, "java", "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
+                  projectBase,
+                  javaHome,
+                  "java",
+                  "-Dsbt.supershell=never",
+                  "-Dsbt.color=" + color,
+                  "-jar",
+                  binary,
+                  "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
