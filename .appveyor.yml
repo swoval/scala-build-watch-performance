@@ -12,6 +12,7 @@ environment:
 
 test_script:
     - cd c:\projects\watch-perf
+    - SET OLD_PATH=%PATH%
     - SET PATH=%JAVA_HOME%\bin;%OLD_PATH%
     - md target\classes
     - javac -cp lib\swoval\file-tree-views-2.1.1.jar src\main\java\build\performance\Main.java -d target\classes
