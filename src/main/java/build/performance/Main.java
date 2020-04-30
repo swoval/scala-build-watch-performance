@@ -54,20 +54,20 @@ public class Main {
   static {
     allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
-    allProjects.add("sbt-1.3.0");
-    allProjects.add("sbt-1.3.0-fork");
-    allProjects.add("sbt-1.3.0-turbo");
+    allProjects.add("sbt-1.3.10");
+    allProjects.add("sbt-1.3.10-fork");
+    allProjects.add("sbt-1.3.10-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.3.6");
     allProjects.add("bloop-1.3.2");
     try {
-      final var url = Main.class.getClassLoader().getResource("sbt-1.3.0");
-      if (url == null) throw new NullPointerException();
+      final var url = Main.class.getClassLoader().getResource("sbt-1.3.10");
+      if (url == null)
+        throw new NullPointerException();
       final var uri = url.toURI();
-      jarFileSystem =
-          uri.getScheme().equals("jar")
-              ? FileSystems.newFileSystem(uri, Collections.emptyMap())
-              : null;
+      jarFileSystem = uri.getScheme().equals("jar")
+          ? FileSystems.newFileSystem(uri, Collections.emptyMap())
+          : null;
     } catch (final Exception e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -167,86 +167,35 @@ public class Main {
           final var binary = projectBase.resolve("bin").resolve("sbt-launch.jar").toString();
           layout = new ProjectLayout(projectBase, projectBase);
           final var color = isWin ? "false" : "true";
-          final var factory =
-              new SimpleServerFactory(
-                  projectBase,
-                  javaHome,
-                  "java",
-                  "-Dsbt.supershell=never",
-                  "-Dsbt.color=" + color,
-                  "-jar",
-                  binary,
-                  "~test");
+          final var factory = new SimpleServerFactory(projectBase, javaHome, "java",
+              "-Dsbt.supershell=never", "-Dsbt.color=" + color, "-jar", binary, "~test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("mill")) {
           final var binary = projectBase.resolve("bin").resolve("mill").toString();
           layout = new ProjectLayout(projectBase, projectBase.resolve("perf"));
-          final var factory =
-              new SimpleServerFactory(
-                  projectBase,
-                  javaHome,
-                  "java",
-                  "-DMILL_CLASSPATH=" + binary,
-                  "-DMILL_VERSION=0.3.6",
-                  "-Djna.nosys=true",
-                  "-cp",
-                  binary,
-                  "mill.MillMain",
-                  "-i",
-                  "-w",
-                  "perf.test");
+          final var factory = new SimpleServerFactory(projectBase, javaHome, "java",
+              "-DMILL_CLASSPATH=" + binary, "-DMILL_VERSION=0.3.6", "-Djna.nosys=true", "-cp",
+              binary, "mill.MillMain", "-i", "-w", "perf.test");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("gradle")) {
           var binaryName = projectName.replaceAll("gradle-", "gradle-launcher-") + ".jar";
           final var binary = projectBase.resolve("lib").resolve(binaryName).toString();
           layout = new ProjectLayout(projectBase, projectBase);
-          final var factory =
-              new SimpleServerFactory(
-                  projectBase,
-                  javaHome,
-                  "java",
-                  "-Xmx64m",
-                  "-Xms64m",
-                  "-Dorg.gradle.appname=gradle",
-                  "-classpath",
-                  binary,
-                  "org.gradle.launcher.GradleMain",
-                  "-t",
-                  "spec");
+          final var factory = new SimpleServerFactory(projectBase, javaHome, "java", "-Xmx64m",
+              "-Xms64m", "-Dorg.gradle.appname=gradle", "-classpath", binary,
+              "org.gradle.launcher.GradleMain", "-t", "spec");
           project = new Project(projectName, layout, factory);
         } else if (projectName.startsWith("bloop")) {
           installBloop(projectBase, javaHome);
           final var bloopJar = projectBase.resolve("dist").resolve("blp-coursier").toString();
           layout = new ProjectLayout(projectBase, projectBase);
-          final var serverFactory =
-              new SimpleServerFactory(
-                  projectBase,
-                  javaHome,
-                  "java",
-                  "-jar",
-                  bloopJar,
-                  "launch",
-                  "ch.epfl.scala:bloop-frontend_2.12:1.3.2",
-                  "-r",
-                  "bintray:scalameta/maven",
-                  "-r",
-                  "bintray:scalacenter/releases",
-                  "-r",
-                  "https://oss.sonatype.org/content/repository/staging",
-                  "--main",
-                  "bloop.Server");
+          final var serverFactory = new SimpleServerFactory(projectBase, javaHome, "java", "-jar",
+              bloopJar, "launch", "ch.epfl.scala:bloop-frontend_2.12:1.3.2", "-r",
+              "bintray:scalameta/maven", "-r", "bintray:scalacenter/releases", "-r",
+              "https://oss.sonatype.org/content/repository/staging", "--main", "bloop.Server");
           final var bloopBin = projectBase.resolve("dist").resolve("bloop").toString();
-          final var factory =
-              new ClientServerFactory(
-                  serverFactory,
-                  bloopUpCheck(projectBase),
-                  projectBase,
-                  javaHome,
-                  "python",
-                  bloopBin,
-                  "test",
-                  "bloop-1-3-2",
-                  "-w");
+          final var factory = new ClientServerFactory(serverFactory, bloopUpCheck(projectBase),
+              projectBase, javaHome, "python", bloopBin, "test", "bloop-1-3-2", "-w");
           project = new Project(projectName, layout, factory);
         } else {
           throw new IllegalArgumentException("Cannot create a project from name " + projectName);
@@ -256,25 +205,16 @@ public class Main {
           results.add(run(project, 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
           genSources(layout, extraSources);
           System.out.println("generated " + extraSources + " sources");
-          results.add(
-              run(
-                  project,
-                  extraSources,
-                  timeout,
-                  iterations,
-                  warmupIterations,
-                  cpuTimeout,
-                  watcher));
+          results.add(run(
+              project, extraSources, timeout, iterations, warmupIterations, cpuTimeout, watcher));
         } catch (final Exception e) {
           System.err.println("Error running tests for " + project.name);
           e.printStackTrace();
         }
       }
-      results.sort(
-          (left, right) ->
-              left.count == right.count
-                  ? left.name.compareTo(right.name)
-                  : left.count - right.count);
+      results.sort((left, right)
+                       -> left.count == right.count ? left.name.compareTo(right.name)
+                                                    : left.count - right.count);
       System.out.println(" project | min (ms) | max (ms) | median (ms) | total (ms) | cpu % |");
       System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
@@ -289,18 +229,13 @@ public class Main {
     return runProc(30, TimeUnit.SECONDS, false, commands);
   }
 
-  private static boolean runProc(
-      final long duration, final TimeUnit timeUnit, final boolean quiet, final String... commands)
-      throws IOException {
+  private static boolean runProc(final long duration, final TimeUnit timeUnit, final boolean quiet,
+      final String... commands) throws IOException {
     return runProc(duration, timeUnit, quiet, new ProcessBuilder(commands));
   }
 
-  private static boolean runProc(
-      final long duration,
-      final TimeUnit timeUnit,
-      final boolean quiet,
-      final ProcessBuilder builder)
-      throws IOException {
+  private static boolean runProc(final long duration, final TimeUnit timeUnit, final boolean quiet,
+      final ProcessBuilder builder) throws IOException {
     final var process = builder.start();
     var thread = quiet ? null : new ProcessIOThread(process);
     try {
@@ -308,7 +243,8 @@ public class Main {
     } catch (final InterruptedException e) {
       return false;
     } finally {
-      if (thread != null) thread.interrupt();
+      if (thread != null)
+        thread.interrupt();
     }
   }
 
@@ -319,11 +255,7 @@ public class Main {
     private final long totalMs;
     private final double cpuUtilization;
 
-    RunResult(
-        final String name,
-        final int count,
-        final long[] results,
-        final long totalMs,
+    RunResult(final String name, final int count, final long[] results, final long totalMs,
         final double cpuUtilization) {
       this.count = count;
       this.name = name;
@@ -349,22 +281,15 @@ public class Main {
       } else {
         avg = times.get(results.length / 2);
       }
-      return this.name
-          + (" (" + (count + 3) + " source files) | ")
+      return this.name + (" (" + (count + 3) + " source files) | ")
           + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
     }
   }
 
   @SuppressWarnings("unused")
-  private static RunResult run(
-      final Project project,
-      final int count,
-      final int timeoutMinutes,
-      final int iterations,
-      final int warmupIterations,
-      final int cpuTimeout,
-      final PathWatcher<PathWatchers.Event> watcher)
-      throws TimeoutException {
+  private static RunResult run(final Project project, final int count, final int timeoutMinutes,
+      final int iterations, final int warmupIterations, final int cpuTimeout,
+      final PathWatcher<PathWatchers.Event> watcher) throws TimeoutException {
     final var result = new long[iterations];
     final var start = System.nanoTime();
     try (final var server = project.buildServerFactory.newServer()) {
@@ -377,9 +302,11 @@ public class Main {
         System.out.println("Waited for startup");
       }
       // bloop takes a moment to start watching files
-      if (project.name.startsWith("bloop")) Thread.sleep(1000 + count / 2);
+      if (project.name.startsWith("bloop"))
+        Thread.sleep(1000 + count / 2);
       for (int i = -warmupIterations; i < iterations; ++i) {
-        if (project.name.startsWith("bloop")) Thread.sleep(1000);
+        if (project.name.startsWith("bloop"))
+          Thread.sleep(1000);
         final var updateResult = project.updateAkkaMain(watcher, count);
         if (updateResult.latch.await(30, TimeUnit.SECONDS)) {
           long elapsed = updateResult.elapsed();
@@ -487,11 +414,8 @@ public class Main {
     }
 
     private static Path srcDirectory(final Path base, final String config) {
-      return base.resolve("src")
-          .resolve(config)
-          .resolve("scala")
-          .resolve("sbt")
-          .resolve("benchmark");
+      return base.resolve("src").resolve(config).resolve("scala").resolve("sbt").resolve(
+          "benchmark");
     }
   }
 
@@ -513,15 +437,12 @@ public class Main {
     }
   }
 
-  private interface BuildServerFactory {
-    TimeoutAutoCloseable newServer();
-  }
+  private interface BuildServerFactory { TimeoutAutoCloseable newServer(); }
 
   private interface TimeoutAutoCloseable extends AutoCloseable {
     int pid();
 
-    @Override
-    void close() throws TimeoutException;
+    @Override void close() throws TimeoutException;
   }
 
   private static class SimpleServerFactory implements BuildServerFactory {
@@ -546,11 +467,8 @@ public class Main {
     private final BuildServerFactory clientServerFactory;
     private final Supplier<Boolean> serverUpCheck;
 
-    ClientServerFactory(
-        final BuildServerFactory buildServerFactory,
-        final Supplier<Boolean> serverUpCheck,
-        final Path directory,
-        final String javaHome,
+    ClientServerFactory(final BuildServerFactory buildServerFactory,
+        final Supplier<Boolean> serverUpCheck, final Path directory, final String javaHome,
         final String... commands) {
       this.buildServerFactory = buildServerFactory;
       this.clientServerFactory = new SimpleServerFactory(directory, javaHome, commands);
@@ -560,7 +478,8 @@ public class Main {
     @Override
     public TimeoutAutoCloseable newServer() {
       final var server = buildServerFactory.newServer();
-      if (!serverUpCheck.get()) throw new IllegalStateException("Server did not respond");
+      if (!serverUpCheck.get())
+        throw new IllegalStateException("Server did not respond");
       final var client = clientServerFactory.newServer();
       return new TimeoutAutoCloseable() {
         @Override
@@ -588,7 +507,8 @@ public class Main {
     final var processBuilder =
         new ProcessBuilder(commands).inheritIO().directory(directory.toFile());
     processBuilder.environment().remove("SBT_OPTS");
-    if (!javaHome.isEmpty()) processBuilder.environment().put("JAVA_HOME", javaHome);
+    if (!javaHome.isEmpty())
+      processBuilder.environment().put("JAVA_HOME", javaHome);
     return processBuilder;
   }
 
@@ -604,50 +524,41 @@ public class Main {
           projectLayout.getBaseDirectory().resolve("watch-" + (rand < 0 ? -rand : rand) + ".out");
       System.out.println("Waiting for " + newPath);
       final var latch = new CountDownLatch(1);
-      watcher.addObserver(
-          new Observer<>() {
-            @Override
-            public void onError(final Throwable t) {}
+      watcher.addObserver(new Observer<>() {
+        @Override
+        public void onError(final Throwable t) {}
 
-            @Override
-            public void onNext(final Event event) {
-              if (event.getTypedPath().getPath().equals(newPath)) {
-                try {
-                  if (event.getTypedPath().isFile()
-                      && Integer.valueOf(Files.readString(newPath).lines().iterator().next())
-                          == count) latch.countDown();
-                } catch (final NumberFormatException | NoSuchElementException e) {
-                  // ignore this, it means the file doesn't exist
-                } catch (final Exception e) {
-                  e.printStackTrace();
-                }
-              }
+        @Override
+        public void onNext(final Event event) {
+          if (event.getTypedPath().getPath().equals(newPath)) {
+            try {
+              if (event.getTypedPath().isFile()
+                  && Integer.valueOf(Files.readString(newPath).lines().iterator().next()) == count)
+                latch.countDown();
+            } catch (final NumberFormatException | NoSuchElementException e) {
+              // ignore this, it means the file doesn't exist
+            } catch (final Exception e) {
+              e.printStackTrace();
             }
-          });
+          }
+        }
+      });
       final var pathString = newPath.toString().replaceAll("\\\\", "\\\\\\\\");
       final var blahString =
-          projectLayout
-              .getMainSourceDirectory()
-              .resolve("blah")
-              .toString()
-              .replaceAll("\\\\", "\\\\\\\\");
-      final String content =
-          "package sbt.benchmark\n\n"
-              + "import java.nio.file.Paths\n"
-              + "object WatchFile {\n"
-              + ("  val path = java.nio.file.Paths.get(\"" + pathString + "\")\n")
-              + ("  val blahPath = java.nio.file.Paths.get(\"" + blahString + "\")\n")
-              + "}";
+          projectLayout.getMainSourceDirectory().resolve("blah").toString().replaceAll(
+              "\\\\", "\\\\\\\\");
+      final String content = "package sbt.benchmark\n\n"
+          + "import java.nio.file.Paths\n"
+          + "object WatchFile {\n"
+          + ("  val path = java.nio.file.Paths.get(\"" + pathString + "\")\n")
+          + ("  val blahPath = java.nio.file.Paths.get(\"" + blahString + "\")\n") + "}";
       final var outputPath = projectLayout.getOutputPathSourceFile();
       Files.writeString(outputPath, content);
       return new UpdateResult(latch, newPath, System.currentTimeMillis());
     }
 
-    Project(
-        final String name,
-        final ProjectLayout projectLayout,
-        final BuildServerFactory buildServerFactory)
-        throws IOException, URISyntaxException {
+    Project(final String name, final ProjectLayout projectLayout,
+        final BuildServerFactory buildServerFactory) throws IOException, URISyntaxException {
       this.name = name;
       this.projectLayout = projectLayout;
       this.buildServerFactory = buildServerFactory;
@@ -657,15 +568,15 @@ public class Main {
 
   private static String generatedSource(final int counter) {
     final int lines = 75;
-    return "package sbt.benchmark.blah\n\nclass Blah"
-        + counter
+    return "package sbt.benchmark.blah\n\nclass Blah" + counter
         + "\n// ******************************************************************".repeat(lines);
   }
 
   private static String loadSourceFile(final String name) throws IOException, URISyntaxException {
     final ClassLoader loader = Main.class.getClassLoader();
     final URL url = loader.getResource("shared/" + name);
-    if (url == null) throw new NullPointerException();
+    if (url == null)
+      throw new NullPointerException();
     final URI uri = url.toURI();
     return new String(Files.readAllBytes(Paths.get(uri)));
   }
@@ -673,7 +584,8 @@ public class Main {
   private static void setupProject(final String project, final Path tempDir) {
     try {
       final URL url = Main.class.getClassLoader().getResource(project);
-      if (url == null) throw new NullPointerException();
+      if (url == null)
+        throw new NullPointerException();
       final URI uri = url.toURI();
       Path path;
       if (uri.getScheme().equals("jar") && jarFileSystem != null) {
@@ -682,36 +594,33 @@ public class Main {
         path = Paths.get(uri);
       }
       final var base = path.getParent();
-      Files.walkFileTree(
-          path,
-          new FileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(
-                final Path dir, final BasicFileAttributes attrs) throws IOException {
-              Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
-              return FileVisitResult.CONTINUE;
-            }
+      Files.walkFileTree(path, new FileVisitor<>() {
+        @Override
+        public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs)
+            throws IOException {
+          Files.createDirectories(tempDir.resolve(base.relativize(dir).toString()));
+          return FileVisitResult.CONTINUE;
+        }
 
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
-                throws IOException {
-              if (attrs.isRegularFile()) {
-                Files.write(
-                    tempDir.resolve(base.relativize(file).toString()), Files.readAllBytes(file));
-              }
-              return FileVisitResult.CONTINUE;
-            }
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+          if (attrs.isRegularFile()) {
+            Files.write(
+                tempDir.resolve(base.relativize(file).toString()), Files.readAllBytes(file));
+          }
+          return FileVisitResult.CONTINUE;
+        }
 
-            @Override
-            public FileVisitResult visitFileFailed(Path file, IOException exc) {
-              return FileVisitResult.CONTINUE;
-            }
+        @Override
+        public FileVisitResult visitFileFailed(Path file, IOException exc) {
+          return FileVisitResult.CONTINUE;
+        }
 
-            @Override
-            public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
-              return FileVisitResult.CONTINUE;
-            }
-          });
+        @Override
+        public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+          return FileVisitResult.CONTINUE;
+        }
+      });
     } catch (final NullPointerException | IOException | URISyntaxException e) {
       e.printStackTrace();
     }
@@ -746,40 +655,35 @@ public class Main {
       try {
         final Set<FileVisitOption> options = new HashSet<>();
         options.add(FileVisitOption.FOLLOW_LINKS);
-        Files.walkFileTree(
-            directory,
-            options,
-            1,
-            new FileVisitor<>() {
-              @Override
-              public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                return FileVisitResult.CONTINUE;
-              }
+        Files.walkFileTree(directory, options, 1, new FileVisitor<>() {
+          @Override
+          public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+            return FileVisitResult.CONTINUE;
+          }
 
-              @Override
-              public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
-                  throws IOException {
-                if (file != directory) {
-                  if (attrs.isDirectory()) {
-                    closeImpl(file);
-                  }
-                  retryDelete(file);
-                }
-                return FileVisitResult.CONTINUE;
+          @Override
+          public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+              throws IOException {
+            if (file != directory) {
+              if (attrs.isDirectory()) {
+                closeImpl(file);
               }
+              retryDelete(file);
+            }
+            return FileVisitResult.CONTINUE;
+          }
 
-              @Override
-              public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                return FileVisitResult.CONTINUE;
-              }
+          @Override
+          public FileVisitResult visitFileFailed(Path file, IOException exc) {
+            return FileVisitResult.CONTINUE;
+          }
 
-              @Override
-              public FileVisitResult postVisitDirectory(Path dir, IOException exc)
-                  throws IOException {
-                retryDelete(dir);
-                return FileVisitResult.CONTINUE;
-              }
-            });
+          @Override
+          public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+            retryDelete(dir);
+            return FileVisitResult.CONTINUE;
+          }
+        });
       } catch (final DirectoryNotEmptyException e) {
         closeImpl(directory);
       }
@@ -792,10 +696,9 @@ public class Main {
     }
 
     TempDirectory() throws IOException {
-      final var base =
-          Paths.get(System.getProperty("java.io.tmpdir", ""))
-              .toRealPath()
-              .resolve("build-tool-perf");
+      final var base = Paths.get(System.getProperty("java.io.tmpdir", ""))
+                           .toRealPath()
+                           .resolve("build-tool-perf");
       Files.createDirectories(base);
       final var file = base.toFile();
       if (!Files.isWritable(base) && !file.setWritable(true))
@@ -803,23 +706,20 @@ public class Main {
       if (!Files.isReadable(base) && !file.setReadable(true))
         throw new IOException("Couldn't set " + base + " readable.");
       final var formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd+HH-mm-ss");
-      final var zdt =
-          ZonedDateTime.ofInstant(
-              Instant.ofEpochMilli(System.currentTimeMillis()),
-              Clock.systemDefaultZone().getZone());
+      final var zdt = ZonedDateTime.ofInstant(
+          Instant.ofEpochMilli(System.currentTimeMillis()), Clock.systemDefaultZone().getZone());
       final var text = formatter.format(zdt);
       tempDir = Files.createDirectories(base.resolve(text));
-      shutdownHook =
-          new Thread("Cleanup-" + tempDir) {
-            @Override
-            public void run() {
-              try {
-                closeImpl(tempDir);
-              } catch (final Exception e) {
-                e.printStackTrace();
-              }
-            }
-          };
+      shutdownHook = new Thread("Cleanup-" + tempDir) {
+        @Override
+        public void run() {
+          try {
+            closeImpl(tempDir);
+          } catch (final Exception e) {
+            e.printStackTrace();
+          }
+        }
+      };
       Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
   }
