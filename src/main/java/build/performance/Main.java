@@ -271,11 +271,7 @@ public class Main {
           e.printStackTrace();
         }
       }
-      results.sort(
-          (left, right) ->
-              left.count == right.count
-                  ? left.name.compareTo(right.name)
-                  : left.count - right.count);
+      results.sort((left, right) -> (int) left.median() - (int) right.median());
       System.out.println(" project | min (ms) | max (ms) | median (ms) | total (ms) | cpu % |");
       System.out.println(":------- | :------: | :------: | :-------: | :--------: | :---: |");
       for (final var result : results) {
@@ -319,6 +315,9 @@ public class Main {
     private final String name;
     private final long totalMs;
     private final double cpuUtilization;
+    private final long median;
+    private final long min;
+    private final long max;
 
     RunResult(
         final String name,
@@ -331,28 +330,33 @@ public class Main {
       this.results = results;
       this.totalMs = totalMs;
       this.cpuUtilization = cpuUtilization;
-    }
-
-    String markdownRow() {
       var min = Long.MAX_VALUE;
       var max = Long.MIN_VALUE;
-      var avg = 0L;
       var times = new ArrayList<Long>(results.length);
       for (var elapsed : results) {
         min = Math.min(min, elapsed);
         max = Math.max(max, elapsed);
         times.add(elapsed);
       }
+      this.min = min;
+      this.max = max;
       Collections.sort(times);
       if (results.length % 2 == 0) {
         int base = results.length / 2;
-        avg = (times.get(base) + times.get(base - 1)) / 2;
+        this.median = (times.get(base) + times.get(base - 1)) / 2;
       } else {
-        avg = times.get(results.length / 2);
+        this.median = times.get(results.length / 2);
       }
+    }
+
+    long median() {
+      return median;
+    }
+
+    String markdownRow() {
       return this.name
           + (" (" + (count + 3) + " source files) | ")
-          + (min + " | " + max + " | " + avg + " | " + totalMs + " | " + cpuUtilization);
+          + (min + " | " + max + " | " + median + " | " + totalMs + " | " + cpuUtilization);
     }
   }
 
