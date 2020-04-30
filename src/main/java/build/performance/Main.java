@@ -189,10 +189,11 @@ public class Main {
           installBloop(projectBase, javaHome);
           final var bloopJar = projectBase.resolve("dist").resolve("blp-coursier").toString();
           layout = new ProjectLayout(projectBase, projectBase);
-          final var serverFactory = new SimpleServerFactory(projectBase, javaHome, "java", "-jar",
-              bloopJar, "launch", "ch.epfl.scala:bloop-frontend_2.12:1.3.2", "-r",
-              "bintray:scalameta/maven", "-r", "bintray:scalacenter/releases", "-r",
-              "https://oss.sonatype.org/content/repository/staging", "--main", "bloop.Server");
+          final var serverFactory =
+              new SimpleServerFactory(projectBase, javaHome, "java", "-Djna.nosys=true", "-jar",
+                  bloopJar, "launch", "ch.epfl.scala:bloop-frontend_2.12:1.3.2", "-r",
+                  "bintray:scalameta/maven", "-r", "bintray:scalacenter/releases", "-r",
+                  "https://oss.sonatype.org/content/repository/staging", "--main", "bloop.Server");
           final var bloopBin = projectBase.resolve("dist").resolve("bloop").toString();
           final var factory = new ClientServerFactory(serverFactory, bloopUpCheck(projectBase),
               projectBase, javaHome, "python", bloopBin, "test", "bloop-1-3-2", "-w");
