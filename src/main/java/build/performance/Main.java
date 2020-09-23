@@ -61,7 +61,7 @@ public class Main {
     allProjects.add("sbt-1.4.0-RC2-fork");
     allProjects.add("sbt-1.4.0-RC2-turbo");
     allProjects.add("gradle-5.4.1");
-    allProjects.add("mill-0.6.2");
+    allProjects.add("mill-0.8.0");
     allProjects.add("bloop-1.4.0-RC1");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.13");
@@ -191,7 +191,7 @@ public class Main {
                   javaHome,
                   "java",
                   "-DMILL_CLASSPATH=" + binary,
-                  "-DMILL_VERSION=0.6.2",
+                  "-DMILL_VERSION=0.8.0",
                   "-Djna.nosys=true",
                   "-cp",
                   binary,
