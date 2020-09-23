@@ -60,6 +60,7 @@ public class Main {
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.6.2");
     allProjects.add("bloop-1.4.0-RC1");
+    allProjects.add("sbt-1.4.0-pre-release");
     try {
       final var url = Main.class.getClassLoader().getResource("sbt-1.3.10");
       if (url == null) throw new NullPointerException();
@@ -172,6 +173,7 @@ public class Main {
                   projectBase,
                   javaHome,
                   "java",
+                  "-XX:+UseParallelGC",
                   "-Dsbt.supershell=never",
                   "-Dsbt.color=" + color,
                   "-jar",
@@ -255,17 +257,19 @@ public class Main {
         try (final var watcher = PathWatchers.get(true)) {
           watcher.register(layout.getBaseDirectory(), 0);
           results.add(run(project, 0, timeout, iterations, warmupIterations, cpuTimeout, watcher));
-          genSources(layout, extraSources);
-          System.out.println("generated " + extraSources + " sources");
-          results.add(
-              run(
-                  project,
-                  extraSources,
-                  timeout,
-                  iterations,
-                  warmupIterations,
-                  cpuTimeout,
-                  watcher));
+          if (extraSources > 0) {
+            genSources(layout, extraSources);
+            System.out.println("generated " + extraSources + " sources");
+            results.add(
+                run(
+                    project,
+                    extraSources,
+                    timeout,
+                    iterations,
+                    warmupIterations,
+                    cpuTimeout,
+                    watcher));
+          }
         } catch (final Exception e) {
           System.err.println("Error running tests for " + project.name);
           e.printStackTrace();
