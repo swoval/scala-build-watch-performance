@@ -54,15 +54,17 @@ public class Main {
   static {
     allProjects = new LinkedHashSet<>();
     allProjects.add("sbt-0.13.17");
-    allProjects.add("sbt-1.3.10");
-    allProjects.add("sbt-1.3.10-fork");
-    allProjects.add("sbt-1.3.10-turbo");
+    allProjects.add("sbt-1.3.13");
+    allProjects.add("sbt-1.3.13-fork");
+    allProjects.add("sbt-1.3.13-turbo");
+    allProjects.add("sbt-1.4.0-RC2");
+    allProjects.add("sbt-1.4.0-RC2-fork");
+    allProjects.add("sbt-1.4.0-RC2-turbo");
     allProjects.add("gradle-5.4.1");
     allProjects.add("mill-0.6.2");
     allProjects.add("bloop-1.4.0-RC1");
-    allProjects.add("sbt-1.4.0-pre-release");
     try {
-      final var url = Main.class.getClassLoader().getResource("sbt-1.3.10");
+      final var url = Main.class.getClassLoader().getResource("sbt-1.3.13");
       if (url == null) throw new NullPointerException();
       final var uri = url.toURI();
       jarFileSystem =
