@@ -7,7 +7,7 @@ object perf extends SbtModule {
 
   object test extends Tests {
     def ivyDeps = Agg(
-      ivy"org.scalatest::scalatest:3.0.5",
+      ivy"org.scalatest::scalatest:3.0.8",
     )
     def testFrameworks = Seq("org.scalatest.tools.Framework")
   }
