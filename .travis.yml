@@ -19,6 +19,7 @@ matrix:
          WATCH_JAVA_HOME=~/.jabba/jdk/adopt@1.11.0-3/Contents/Home
 
 before_install:
+    - rm -r $(find $HOME/.sbt -name "*-SNAPSHOT") || true
     - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.0/install.sh | bash; . ~/.jabba/jabba.sh
     - git clone --single-branch --branch terminal-fixes-appveyor https://github.com/eatkins/sbt.git /tmp/sbt-build
     - ~/.jabba/bin/jabba install adopt@1.11.0-3
@@ -44,3 +45,4 @@ cache:
 before_cache:
   - find $HOME/.ivy2/cache -name "ivydata-*.properties" -delete
   - find $HOME/.sbt        -name "*.lock"               -delete
+  - rm -r $(find $HOME/.sbt -name "*-SNAPSHOT") || true
