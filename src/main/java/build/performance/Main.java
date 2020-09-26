@@ -60,6 +60,7 @@ public class Main {
     allProjects.add("sbt-1.4.0-RC2");
     allProjects.add("sbt-1.4.0-RC2-fork");
     allProjects.add("sbt-1.4.0-RC2-turbo");
+    allProjects.add("sbt-1.4.0-SNAPSHOT");
     allProjects.add("gradle-6.6.1");
     allProjects.add("mill-0.8.0");
     allProjects.add("bloop-1.4.0-RC1");
