@@ -179,6 +179,7 @@ public class Main {
                   "-XX:+UseParallelGC",
                   "-Dsbt.supershell=never",
                   "-Dsbt.color=" + color,
+                  "-Dsbt.ci=true",
                   "-jar",
                   binary,
                   "~test");
