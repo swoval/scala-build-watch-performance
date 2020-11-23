@@ -57,9 +57,9 @@ public class Main {
     allProjects.add("sbt-1.3.13");
     allProjects.add("sbt-1.3.13-fork");
     allProjects.add("sbt-1.3.13-turbo");
-    allProjects.add("sbt-1.4.0-RC2");
-    allProjects.add("sbt-1.4.0-RC2-fork");
-    allProjects.add("sbt-1.4.0-RC2-turbo");
+    allProjects.add("sbt-1.4.4");
+    allProjects.add("sbt-1.4.4-fork");
+    allProjects.add("sbt-1.4.4-turbo");
     allProjects.add("sbt-1.4.0-SNAPSHOT");
     allProjects.add("gradle-6.6.1");
     allProjects.add("mill-0.8.0");

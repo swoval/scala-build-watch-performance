@@ -7,9 +7,9 @@ repositories {
 }
 
 dependencies {
-    compile 'org.scala-lang:scala-library:2.13.3'
+    compile 'org.scala-lang:scala-library:2.13.4'
     compile 'com.typesafe.akka:akka-actor_2.13:2.6.8'
-    testCompile 'org.scalatest:scalatest_2.13:3.0.8'
+    testCompile 'org.scalatest:scalatest_2.13.4.0.8'
 }
 
 task spec(dependsOn: ['testClasses'], type: JavaExec) {
